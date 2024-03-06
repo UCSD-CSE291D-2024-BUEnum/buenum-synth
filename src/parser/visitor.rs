@@ -5,59 +5,163 @@ use pest::error::Error;
 use pest::iterators::Pair;
 use std::collections::HashMap;
 
-pub trait Visitor<T> {
-     fn visit_main(&mut self, pair: Pair<Rule>) -> Result<T, Error<Rule>>;
+pub trait Visitor {
+    type Env;
+    fn visit_main(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // SyGuG
+    fn visit_sygus(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_cmd(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_smt_cmd(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // Cmd
+    fn visit_check_synth(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_constraint(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_declare_var(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_synthe_fun(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // SmtCmd
+    fn visit_define_fun(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_set_logic(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_set_option(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // GrammarDef
+    fn visit_grammar_def(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_grouped_rule_list(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_gterm(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // Term
+    fn visit_term(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_bf_term(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_var_binding(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // Term productions
+    fn visit_term_ident(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_term_literal(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_term_ident_list(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // fn visit_term_attri(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // fn visit_term_exist(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // fn visit_term_forall(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // fn visit_term_let(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // BfTerm productions
+    fn visit_bfterm_ident(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_bfterm_literal(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_bfterm_ident_list(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // fn visit_bfterm_attri(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // Sort
+    fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
 }
 
-pub struct SyGuSVisitor;
+pub struct SyGuSVisitor {
+    pub sygus_prog: SyGuSProg,
+}
 
-impl Visitor<SyGuSProg> for SyGuSVisitor {
-    fn visit_main(&mut self, pair: Pair<Rule>) -> Result<SyGuSProg, Error<Rule>> {
-        let mut set_logic = SetLogic::Unknown;
-        let mut define_fun = HashMap::new();
-        let mut declare_var = HashMap::new();
-        let mut synthe_func = HashMap::new();
-        let mut set_option = HashMap::new();
+impl SyGuSVisitor {
+    pub fn new() -> SyGuSVisitor {
+        SyGuSVisitor {
+            sygus_prog: SyGuSProg::new(),
+        }
+    }
+}
 
+impl Visitor for SyGuSVisitor {
+    type Env = SyGuSProg;
+    fn visit_main(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         for pair in pair.into_inner() {
             match pair.as_rule() {
                 Rule::SyGuS => {
-
+                    self.visit_sygus(pair)?;
                 }
-                // Rule::set_logic => {
-                //     set_logic = match pair.as_str() {
-                //         "LIA" => SetLogic::LIA,
-                //         "BV" => SetLogic::BV,
-                //         _ => SetLogic::Unknown,
-                //     };
-                // }
-                // Rule::define_fun => {
-                //     let (name, body) = self.visit_define_fun(pair)?;
-                //     define_fun.insert(name, body);
-                // }
-                // Rule::declare_var => {
-                //     let (symbol, sort) = self.visit_declare_var(pair)?;
-                //     declare_var.insert(symbol, sort);
-                // }
-                // Rule::synthe_fun => {
-                //     let (name, grammar) = self.visit_synthe_fun(pair)?;
-                //     synthe_func.insert(name, grammar);
-                // }
-                // Rule::set_option => {
-                //     let (opt_name, opt_value) = self.visit_set_option(pair)?;
-                //     set_option.insert(opt_name, opt_value);
-                // }
                 _ => unreachable!(),
             }
         }
-
-        Ok(SyGuSProg {
-            set_logic,
-            define_fun,
-            declare_var,
-            synthe_func,
-            set_option,
-        })
+        Ok(&self.sygus_prog)
+    }
+    // SyGuG
+    fn visit_sygus(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::Cmd => {
+                    self.visit_cmd(pair)?;
+                }
+                Rule::SmtCmd => {
+                    self.visit_smt_cmd(pair)?;
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(&self.sygus_prog)
+    }
+    fn visit_cmd(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_smt_cmd(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    // Cmd
+    fn visit_check_synth(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_constraint(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_declare_var(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_synthe_fun(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    // SmtCmd
+    fn visit_define_fun(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_set_logic(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_set_option(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    // GrammarDef
+    fn visit_grammar_def(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_grouped_rule_list(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_gterm(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    // Term
+    fn visit_term(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_bf_term(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_var_binding(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    // Term productions
+    fn visit_term_ident(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_term_literal(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_term_ident_list(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    // BfTerm productions
+    fn visit_bfterm_ident(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_bfterm_literal(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    fn visit_bfterm_ident_list(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
+    }
+    // Sort
+    fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        Ok(&self.sygus_prog)
     }
 }
 
