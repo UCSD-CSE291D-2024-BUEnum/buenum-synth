@@ -38,7 +38,6 @@ Keyword      = @{ "." ~ Symbol }
 /// 2.4 Identifiers
 /// An identifier ⟨Identifier⟩ is a syntactic extension of symbols that includes symbols that are indexed by
 /// integer constants or other symbols.
-// identifier = { symbol | "(" ~ "_" ~ symbol ~ index+ ~ ")" }
 Identifier = ${ Symbol | "(" ~ "_" ~ Symbol ~ Index+ ~ ")" }
 // use "$" to allow access to "Index" pair in the child rule
 Index = ${ Numeral | Symbol }

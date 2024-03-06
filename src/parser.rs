@@ -1,16 +1,20 @@
 mod ast;
 mod visitor;
 
+use pest::error::Error;
 use pest::Parser;
 use pest_derive::Parser;
-use pest::error::Error;
 
+use self::visitor::SyGuSVisitor;
+use crate::parser::visitor::Visitor;
 #[derive(Parser)]
 #[grammar = "parser/grammar.pest"] // relative to project `src`
 pub struct SyGuSParser;
 
-pub fn parse(input: &str) -> Result<ast::SyGuS, Error<Rule>> {
+pub fn parse(input: &str) -> Result<ast::SyGuSProg, Error<Rule>> {
     let mut pairs = SyGuSParser::parse(Rule::main, input)?;
     let pair = pairs.next().unwrap();
-    visitor::visit_main(pair)
+    let mut sygus_visitor = SyGuSVisitor;
+    let prog = sygus_visitor.visit_main(pair)?;
+    Ok(prog)
 }
