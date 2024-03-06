@@ -1,0 +1,169 @@
+/// The SyGuS Language Standard Version 2.1
+/// https://sygus-org.github.io/assets/pdf/SyGuS-IF_2.1.pdf
+/// The entry point for the SyGuS grammar.
+/// 2. Syntax start
+main  = { SOI ~ SyGuS ~ EOI }
+SyGuS = { Cmd* }
+
+/// 2.1 Comments
+/// comments and whitespaces are filtered out from token streams
+/// using the `_{ ... }` syntax.
+COMMENT    = _{ ";" ~ (!"\n" ~ ANY)* }
+WHITESPACE = _{ " " | "\n" | "\r" | "\t" }
+
+/// 2.2 Literals
+/// A literal ⟨Literal⟩ is a special sequence of characters, typically used to denote values or constant terms.
+/// The SyGuS format includes syntax for several kinds of literals, which are listed below.
+/// This treatment of most of these literals coincides with those in SMT-LIB version 2.6.
+/// For full details, see Section 3.1 of the SMT-LIB 2.6 standard [3]
+Literal     = _{ Numeral | Decimal | BoolConst | HexConst | BinConst | StringConst }
+Numeral     = @{ "0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
+Decimal     = @{ Numeral ~ "." ~ ("0"*) ~ Numeral }
+BoolConst   = @{ "true" | "false" }
+HexConst    = @{ "#x" ~ ASCII_HEX_DIGIT+ }
+BinConst    = @{ "#b" ~ ASCII_BIN_DIGIT+ }
+StringConst = @{
+    QUOTATION_MARK ~ (!QUOTATION_MARK ~ ANY | QUOTATION_MARK ~ QUOTATION_MARK)* ~ QUOTATION_MARK
+}
+
+/// 2.3 Symbols
+/// Symbols are denoted with the non-terminal ⟨Symbol⟩.
+/// A symbol is any non-empty sequence of upperand lower-case alphabets, digits, and certain special characters (listed below), with the restriction that it may not begin with a digit and is not a reserved word (see Appendix A for a full list of reserved words).
+/// A special character is any of the following:
+/// \! ~ @ $ % ^ & * _ + - = < > / ? .
+SPECIAL_CHAR = _{ "_" | "+" | "-" | "*" | "&" | "!" | "~" | "<" | ">" | "=" | "/" | "%" | "?" | "." | "$" | "^" }
+Symbol       = @{ (ASCII_ALPHA | ASCII_DIGIT | SPECIAL_CHAR)+ }
+Keyword      = @{ "." ~ Symbol }
+
+/// 2.4 Identifiers
+/// An identifier ⟨Identifier⟩ is a syntactic extension of symbols that includes symbols that are indexed by
+/// integer constants or other symbols.
+// identifier = { symbol | "(" ~ "_" ~ symbol ~ index+ ~ ")" }
+Identifier = ${ Symbol | "(" ~ "_" ~ Symbol ~ Index+ ~ ")" }
+// use "$" to allow access to "Index" pair in the child rule
+Index = ${ Numeral | Symbol }
+
+/// 2.5 Attributes
+/// An attribute ⟨Attribute⟩ is a keyword and an (optional) associated value.
+/// The permitted values of attribute values ⟨AttributeV alue⟩ depend on the attribute they are associated
+/// with. Possible values of attributes include symbols, as well as (lists of) sorts and terms. The above
+/// definition of attribute coincides with attributes in Section 3.4 of SMT-LIB version 2.6. All attributes
+/// standardized in this document are listed in Section 8
+Attribute      = { Keyword | Keyword ~ AttributeValue }
+AttributeValue = { Symbol | Sort | Term }
+
+/// 2.6 Sorts
+/// We work in a multi-sorted logic where terms are associated with sorts ⟨Sort⟩. Sorts are constructed via
+/// the following syntax.
+/// ⟨Sort⟩ ::= ⟨Identifier⟩ | ( ⟨Identifier⟩ ⟨Sort⟩+ )
+/// The arity of the sort is the number of (sort) arguments it takes. A parametric sort is one whose arity is
+/// greater than zero. Theories associate identifiers with sorts and sort constructors that have an intended
+/// semantics. Sorts may be defined by theories (see Section 5.1) or may be user-defined (see Section 3.5
+Sort = { Identifier | "(" ~ Identifier ~ Sort+ ~ ")" }
+
+/// 2.7 Terms
+/// We use terms ⟨T erm⟩ to specify grammars and constraints, which are constructed by the following syntax.
+/// ⟨T erm⟩ ::= ⟨Identifier⟩
+/// | ⟨Literal⟩
+/// | ( ⟨Identifier⟩ ⟨T erm⟩+ )
+/// | (! ⟨T erm⟩ ⟨Attribute⟩+ )
+/// | (exists ( ⟨SortedV ar⟩+ ) ⟨T erm⟩ )
+/// | (forall ( ⟨SortedV ar⟩+ ) ⟨T erm⟩ )
+/// | (let ( ⟨V arBinding⟩+ ) ⟨T erm⟩ )
+/// ⟨BfT erm⟩ ::= ⟨Identifier⟩
+/// | ⟨Literal⟩
+/// | ( ⟨Identifier⟩ ⟨BfT erm⟩+ )
+/// | (! ⟨BfT erm⟩ ⟨Attribute⟩+ )
+/// ⟨SortedV ar⟩ ::= ( ⟨Symbol⟩ ⟨Sort⟩ )
+/// ⟨V arBinding⟩ ::= ( ⟨Symbol⟩ ⟨T erm⟩ )
+/// Above, we distinguish a subclass of binder-free terms ⟨BfT erm⟩ in the syntax above, which do not
+/// contain bound (local) variables. Like sorts, the identifiers that comprise terms can either be defined by
+/// the user or by background theories.
+/// 2.7.1 Term Annotations
+/// In SMT-LIB, terms t may be annotated with attributes. The purpose of an attribute is to mark a term
+/// with a set of special properties, which may influence the expected result of later commands. Attributes are
+/// specified using the syntax (! t A1 . . . An) where t is a term and A1, . . . , An are attributes. An attribute
+/// can be any The term above is semantically equivalent to t itself. Several attributes are standardized by
+/// the SMT-LIB standard, while others may be user-defined.
+Term       = {
+    Identifier
+  | Literal
+  | "(" ~ Identifier ~ Term+ ~ ")"
+  | "!" ~ "(" ~ Term ~ Attribute+ ~ ")"
+  | "(" ~ "exists" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
+  | "(" ~ "forall" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
+  | "(" ~ "let" ~ "(" ~ VarBinding+ ~ ")" ~ Term ~ ")"
+}
+BfTerm     = {
+    Identifier
+  | Literal
+  | "(" ~ Identifier ~ BfTerm+ ~ ")"
+  | "!" ~ "(" ~ BfTerm ~ Attribute+ ~ ")"
+}
+SortedVar  = { "(" ~ Symbol ~ Sort ~ ")" }
+VarBinding = { "(" ~ Symbol ~ Term ~ ")" }
+
+/// 2.8 Features (skipped)
+
+/// 2.9 Commands
+// A command ⟨Cmd⟩ is given by the following syntax.
+// ⟨Cmd⟩ ::= (assume ⟨T erm⟩ ) // skipped
+// | (check-synth)
+// | (chc-constraint ( ⟨SortedV ar⟩∗ ) ⟨T erm⟩ ⟨T erm⟩ )    // skipped
+// | (constraint ⟨T erm⟩ )
+// | (declare-var ⟨Symbol⟩ ⟨Sort⟩ )
+// | (declare-weight ⟨Symbol⟩ ⟨Attribute⟩∗ )                // skipped
+// | (inv-constraint ⟨Symbol⟩ ⟨Symbol⟩ ⟨Symbol⟩ ⟨Symbol⟩ )  // skipped
+// | (optimize-synth ( ⟨T erm⟩∗ ) ⟨Attribute⟩∗ )           // skipped
+// | (set-feature ⟨F eature⟩ ⟨BoolConst⟩ )                  // skipped
+// | (synth-fun ⟨Symbol⟩ ( ⟨SortedV ar⟩∗ ) ⟨Sort⟩ ⟨GrammarDef⟩? )
+// | ⟨OracleCmd⟩  // skipped
+// | ⟨SmtCmd⟩
+// ⟨OracleCmd⟩ ::= (oracle-assume ( ⟨SortedV ar⟩∗ ) ( ⟨SortedV ar⟩∗ ) ⟨T erm⟩ ⟨Symbol⟩ )
+// | (oracle-constraint ( ⟨SortedV ar⟩∗ ) ( ⟨SortedV ar⟩∗ ) ⟨T erm⟩ ⟨Symbol⟩ )
+// | (declare-oracle-fun ⟨Symbol⟩ ( ⟨Sort⟩∗ ) ⟨Sort⟩ ⟨Symbol⟩ )
+// | (oracle-constraint-io ⟨Symbol⟩ ⟨Symbol⟩ )
+// | (oracle-constraint-cex ⟨Symbol⟩ ⟨Symbol⟩ )
+// | (oracle-constraint-membership ⟨Symbol⟩ ⟨Symbol⟩ )
+// | (oracle-constraint-poswitness ⟨Symbol⟩ ⟨Symbol⟩ )
+// | (oracle-constraint-negwitness ⟨Symbol⟩ ⟨Symbol⟩ )
+// | (declare-correctness-oracle ⟨Symbol⟩ ⟨Symbol⟩ )
+// | (declare-correctness-cex-oracle ⟨Symbol⟩ ⟨Symbol⟩ )
+// ⟨SmtCmd⟩ ::= (declare-datatype ⟨Symbol⟩ ⟨DT Decl⟩ ) // skipped
+// | (declare-datatypes ( ⟨SortDecl⟩n+1 ) ( ⟨DT Decl⟩n+1 )) // skipped
+// | (declare-sort ⟨Symbol⟩ ⟨Numeral⟩ ) // skipped
+// | (define-fun ⟨Symbol⟩ ( ⟨SortedV ar⟩∗ ) ⟨Sort⟩ ⟨T erm⟩ )
+// | (define-sort ⟨Symbol⟩ ⟨Sort⟩ ) // skipped
+// | (set-info ⟨Keyword⟩ ⟨Literal⟩ ) // skipped
+// | (set-logic ⟨Symbol⟩ )
+// | (set-option ⟨Keyword⟩ ⟨Literal⟩ ) // also allows "set-options"
+// ⟨SortDecl⟩ ::= ( ⟨Symbol⟩ ⟨Numeral⟩ ) // skipped
+// ⟨DT Decl⟩ ::= ( ⟨DTConsDecl⟩+ ) // skipped
+// ⟨DTConsDecl⟩ ::= ( ⟨Symbol⟩ ⟨SortedV ar⟩∗ ) // skipped
+// ⟨GrammarDef⟩ ::= ( ⟨SortedV ar⟩n+1 ) ( ⟨GroupedRuleList⟩n+1 )
+// ⟨GroupedRuleList⟩ ::= ( ⟨Symbol⟩ ⟨Sort⟩ ( ⟨GT erm⟩+ ))
+// ⟨GT erm⟩ ::= (Constant ⟨Sort⟩ ) | (Variable ⟨Sort⟩ ) | ⟨BfT erm⟩
+// For convenience, we distinguish between three kinds of commands above. The commands listed under
+// ⟨Cmd⟩ and ⟨OracleCmd⟩ are specific to the SyGuS format, with the latter pertaining to oracles. The
+// remaining commands listed under ⟨SmtCmd⟩ are borrowed from SMT-LIB 2.6. The semantics of these
+// commands are detailed in Section 3
+Cmd    = {
+    "(" ~ "check-synth" ~ ")"
+  | "(" ~ "constraint" ~ Term ~ ")"
+  | "(" ~ "declare-var" ~ Symbol ~ Sort ~ ")"
+  | "(" ~ "synth-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ GrammarDef? ~ ")"
+  | SmtCmd
+}
+SmtCmd = {
+    "(" ~ "define-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ Term ~ ")"
+  | "(" ~ "set-logic" ~ Symbol ~ ")"
+  | "(" ~ "set-option" ~ "s"? ~ Keyword ~ Literal ~ ")" // set-options is allowed
+}
+
+GrammarDef      = { "(" ~ SortedVar+ ~ ")" ~ "(" ~ GroupedRuleList+ ~ ")" }
+GroupedRuleList = { "(" ~ Symbol ~ Sort ~ "(" ~ GTerm+ ~ ")" ~ ")" }
+GTerm           = {
+    "(" ~ "Constant" ~ Sort ~ ")"
+  | "(" ~ "Variable" ~ Sort ~ ")"
+  | BfTerm
+}
