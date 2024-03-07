@@ -720,23 +720,31 @@ mod tests {
 
     use crate::parser::parse;
 
-    #[test]
-    fn test_visit_main() {
-        let project_root = env!("CARGO_MANIFEST_DIR");
-        let filename = format!(
-            "{}/benchmarks/bitvector-benchmarks/parity-AIG-d0.sl",
-            project_root
-        );
-        let input = fs::read_to_string(&filename).unwrap();
-        let res = parse(&input);
-        let res = match res {
-            Ok(res) => res,
-            Err(e) => {
-                panic!("Error parsing file: {}\nError: {:#?}", filename, e);
-            }
+    const PROJECT_ROOT: &str = env!("CARGO_MANIFEST_DIR");
+    macro_rules! check_parse_tree {
+        ($relative_path:expr) => {
+            let filename = format!("{}/{}", PROJECT_ROOT, $relative_path);
+            let input = fs::read_to_string(&filename).unwrap();
+            let res = parse(&input);
+            let res = match res {
+                Ok(res) => res,
+                Err(e) => {
+                    panic!("Error parsing file: {}\nError: {:#?}", filename, e);
+                }
+            };
+            panic!("{:#?}", res);
         };
-        // pretty print
-        // println!("{:#?}", res);
-        panic!("{:#?}", res);
+    }
+    #[test]
+    fn test_visit_main_eg1() {
+        check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity-AIG-d0.sl"));
+    }
+    #[test]
+    fn test_visit_main_eg2() {
+        check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity-NAND-d1.sl"));
+    }
+    #[test]
+    fn test_visit_main_eg3() {
+        check_parse_tree!(format!("benchmarks/hackers_del/hd-20-d1-prog.sl"));
     }
 }
