@@ -84,22 +84,20 @@ Sort = { Identifier | "(" ~ Identifier ~ Sort+ ~ ")" }
 /// specified using the syntax (! t A1 . . . An) where t is a term and A1, . . . , An are attributes. An attribute
 /// can be any The term above is semantically equivalent to t itself. Several attributes are standardized by
 /// the SMT-LIB standard, while others may be user-defined.
-Term       = {
-    #term_ident      = Identifier
-  | #term_literal    = Literal
-  | #term_ident_list = ("(" ~ Identifier ~ Term+ ~ ")")
-  // | #term_attri      = "!" ~ "(" ~ Term ~ Attribute+ ~ ")"
+Term      = {
+    Identifier
+  | Literal
+  | "(" ~ Identifier ~ Term+ ~ ")" // | #term_attri      = "!" ~ "(" ~ Term ~ Attribute+ ~ ")"
   // | #term_exist      = "(" ~ "exists" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
   // | #term_forall     = "(" ~ "forall" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
   // | #term_let        = "(" ~ "let" ~ "(" ~ VarBinding+ ~ ")" ~ Term ~ ")"
 }
-BfTerm     = {
-    #bfterm_ident      = Identifier
-  | #bfterm_literal    = Literal
-  | #bfterm_ident_list = ("(" ~ Identifier ~ BfTerm+ ~ ")")
-  // | #bfterm_attri      = "!" ~ "(" ~ BfTerm ~ Attribute+ ~ ")"
+BfTerm    = {
+    Identifier
+  | Literal
+  | "(" ~ Identifier ~ BfTerm+ ~ ")" // | #bfterm_attri      = "!" ~ "(" ~ BfTerm ~ Attribute+ ~ ")"
 }
-SortedVar  = { "(" ~ Symbol ~ Sort ~ ")" }
+SortedVar = { "(" ~ Symbol ~ Sort ~ ")" }
 // VarBinding = { "(" ~ Symbol ~ Term ~ ")" }
 
 /// 2.8 Features (skipped)
@@ -146,23 +144,34 @@ SortedVar  = { "(" ~ Symbol ~ Sort ~ ")" }
 // ⟨Cmd⟩ and ⟨OracleCmd⟩ are specific to the SyGuS format, with the latter pertaining to oracles. The
 // remaining commands listed under ⟨SmtCmd⟩ are borrowed from SMT-LIB 2.6. The semantics of these
 // commands are detailed in Section 3
-Cmd    = {
-    #check_synth = ("(" ~ "check-synth" ~ ")")
-  | #constraint  = ("(" ~ "constraint" ~ Term ~ ")")
-  | #declare_var = ("(" ~ "declare-var" ~ Symbol ~ Sort ~ ")")
-  | #synth_fun   = ("(" ~ "synth-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ GrammarDef? ~ ")")
+Cmd           = {
+    CheckSynthCmd
+  | ConstraintCmd
+  | DeclareVarCmd
+  | SynthFunCmd
   | SmtCmd
 }
-SmtCmd = {
-    #define_fun  = ("(" ~ "define-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ Term ~ ")")
-  | #set_logic   = ("(" ~ "set-logic" ~ Symbol ~ ")")
-  | #set_option  = ("(" ~ "set-option" ~"s"? ~ Keyword ~ Literal ~ ")")
+CheckSynthCmd = { "(" ~ "check-synth" ~ ")" }
+ConstraintCmd = { "(" ~ "constraint" ~ Term ~ ")" }
+DeclareVarCmd = { "(" ~ "declare-var" ~ Symbol ~ Sort ~ ")" }
+SynthFunCmd   = { "(" ~ "synth-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ GrammarDef? ~ ")" }
+SmtCmd        = {
+    DefineFunCmd
+  | SetLogicCmd
+  | SetOptionCmd
 }
+
+DefineFunCmd = { "(" ~ "define-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ Term ~ ")" }
+SetLogicCmd  = { "(" ~ "set-logic" ~ Symbol ~ ")" }
+SetOptionCmd = { "(" ~ "set-option" ~ "s"? ~ Keyword ~ Literal ~ ")" }
 
 GrammarDef      = { ("(" ~ SortedVar+ ~ ")")? ~ "(" ~ GroupedRuleList+ ~ ")" }
 GroupedRuleList = { "(" ~ Symbol ~ Sort ~ "(" ~ GTerm+ ~ ")" ~ ")" }
 GTerm           = {
-    #gterm_constant = ("(" ~ "Constant" ~ Sort ~ ")")
-  | #gterm_variable = ("(" ~ "Variable" ~ Sort ~ ")")
-  | #bfterm = BfTerm
+    ConstGTerm
+  | VarGTerm
+  | BfTerm
 }
+
+ConstGTerm = { "(" ~ "Constant" ~ Sort ~ ")" }
+VarGTerm   = { "(" ~ "Variable" ~ Sort ~ ")" }

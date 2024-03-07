@@ -105,53 +105,58 @@ impl Visitor for SyGuSVisitor {
                 Rule::Cmd => {
                     self.visit_cmd(pair)?;
                 }
-                _ => continue,
+                _ => unreachable!("SyGuS should only have Cmd as children"),
             }
         }
         Ok(&self.sygus_prog)
     }
     fn visit_cmd(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         for pair in pairs.clone().into_inner() {
+            let pair_str = format!("{:#?}", pair.clone());
             match pair.as_rule() {
+                Rule::CheckSynthCmd => {
+                    self.visit_check_synth(pair)?;
+                }
+                Rule::ConstraintCmd => {
+                    let env = Vec::from_iter(
+                        self.sygus_prog
+                            .declare_var
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone())),
+                    );
+                    self.visit_constraint(&env, pair)?;
+                }
+                Rule::DeclareVarCmd => {
+                    self.visit_declare_var(pair)?;
+                }
+                Rule::SynthFunCmd => {
+                    self.visit_synth_fun(pair)?;
+                }
                 Rule::SmtCmd => {
                     self.visit_smt_cmd(pair)?;
                 }
-                _ => {
-                    // for the other children of Cmd
-                    // check_synth, constraint, declare_var, synthe_fun
-                    // use the tag to determine which function to call
-                    match pair.as_node_tag() {
-                        Some("check_synth") => self.visit_check_synth(pair)?,
-                        Some("constraint") => {
-                            let env = Vec::from_iter(
-                                self.sygus_prog
-                                    .declare_var
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone())),
-                            );
-                            self.visit_constraint(&env, pair)?
-                        }
-                        Some("declare_var") => self.visit_declare_var(pair)?,
-                        Some("synthe_fun") => self.visit_synth_fun(pair)?,
-                        _ => continue,
-                    };
-                }
+                _ => unreachable!("Cmd should only have CheckSynthCmd, ConstraintCmd, DeclareVarCmd, SynthFunCmd, or SmtCmd as children"),
             }
         }
         Ok(&self.sygus_prog)
     }
     fn visit_smt_cmd(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         // panic!("{:#?}", pairs);
+        let pairs_str = format!("{:#?}", pairs.clone());
         for pair in pairs.clone().into_inner() {
-            match pair.as_node_tag() {
-                Some("define_fun") => self.visit_define_fun(pair)?,
-                Some("set_logic") => self.visit_set_logic(pair)?,
-                Some("set_option") => self.visit_set_option(pair)?,
-                _ => {
-                    //    do nothing
-                    continue;
+            let pair_str = format!("{:#?}", pair.clone());
+            match pair.as_rule() {
+                Rule::DefineFunCmd => {
+                    self.visit_define_fun(pair)?;
                 }
-            };
+                Rule::SetLogicCmd => {
+                    self.visit_set_logic(pair)?;
+                }
+                Rule::SetOptionCmd => {
+                    self.visit_set_option(pair)?;
+                }
+                _ => continue,
+            }
         }
         Ok(&self.sygus_prog)
     }
@@ -340,129 +345,103 @@ impl Visitor for SyGuSVisitor {
         let mut gterm = GTerm::None;
         // only one child
         let pair = pairs.clone().into_inner().next().unwrap();
-        match pair.as_node_tag() {
-            Some("gterm_constant") => {
+        match pair.as_rule() {
+            Rule::ConstGTerm => {
                 let sort = self.visit_sort(pair)?;
                 gterm = GTerm::Constant(sort);
             }
-            Some("gterm_variable") => {
+            Rule::VarGTerm => {
                 let sort = self.visit_sort(pair)?;
                 gterm = GTerm::Variable(sort);
             }
-            Some("gterm_bfterm") => {
+            Rule::BfTerm => {
                 let bf_term = self.visit_bf_term(env, pair)?;
                 gterm = GTerm::BfTerm(bf_term);
             }
-            _ => todo!("BfTerm in gterm not implemented"),
+            _ => unreachable!("gterm should only have ConstGTerm, VarGTerm, or BfTerm as children"),
         }
         Ok(gterm)
     }
     // Term
     fn visit_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
         let mut env = env.clone();
-        for pair in pairs.clone().into_inner() {
-            match pair.as_node_tag() {
-                Some("term_ident") => self.visit_term_ident(pair)?,
-                Some("term_literal") => self.visit_term_literal(pair)?,
-                Some("term_ident_list") => {
-                    let expr;
-                    match pair.as_rule() {
-                        Rule::Identifier => {
-                            let id = pair.as_str().to_string();
-                            // try to find id in env
-                            if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
-                                // if found, create a variable expression
-                                expr = Expr::Var(id);
-                            } else {
-                                panic!("Variable {} not found in environment", id);
-                            }
+        let length = pairs.clone().into_inner().count();
+        if length == 1 {
+            let pair = pairs.clone().into_inner().next().unwrap();
+            match pair.as_rule() {
+                Rule::Identifier => self.visit_term_ident(pair),
+                Rule::Literal => self.visit_term_literal(pair),
+                _ => unreachable!(
+                    "Term should only have Identifier or Literal as children when length is 1"
+                ),
+            }
+        } else {
+            let mut expr = Expr::Var("".to_string());
+            let mut id = String::new();
+            for pair in pairs.clone().into_inner() {
+                match pair.as_rule() {
+                    Rule::Identifier => {
+                        id = pair.as_str().to_string();
+                        // try to find id in env
+                        if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
+                            // if found, create a variable expression
+                            expr = Expr::Var(id.clone());
+                            env.push((id, sort.clone()));
+                        } else {
+                            panic!("Variable {} not found in environment", id);
                         }
-                        Rule::Literal => {
-                            let id = pair.as_str().to_string();
-                            // try to parse id into a sort
-                            match pair.into_inner().next().unwrap().as_rule() {
-                                Rule::Numeral => {
-                                    let val = id.parse::<i64>().unwrap();
-                                    expr = Expr::ConstInt(val);
-                                }
-                                Rule::BoolConst => {
-                                    let val = id.parse::<bool>().unwrap();
-                                    expr = Expr::ConstBool(val);
-                                }
-                                Rule::HexConst => {
-                                    let val = u64::from_str_radix(&id[2..], 16).unwrap();
-                                    expr = Expr::ConstBitVec(val);
-                                }
-                                Rule::StringConst => {
-                                    expr = Expr::Var(id);
-                                }
-                                _ => continue,
-                            }
-                        }
-                        Rule::Term => {
-                            expr = self.visit_term(&env, pair)?;
-                        }
-                        _ => continue,
                     }
-                    expr
+                    Rule::Term => {
+                        expr = self.visit_term(&env, pair)?;
+                        // TODO: need to store the id, sort, and expr
+                    }
+                    _ => unreachable!(
+                        "The third branch should only have Identifier or Term as children"
+                    ),
                 }
-                _ => continue,
-            };
+            }
+            Ok(expr)
         }
-        Ok(Expr::Var("".to_string()))
     }
     fn visit_bf_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
         let mut env = env.clone();
-        for pair in pairs.clone().into_inner() {
-            match pair.as_node_tag() {
-                Some("bfterm_ident") => self.visit_bfterm_ident(pair)?,
-                Some("bfterm_literal") => self.visit_bfterm_literal(pair)?,
-                Some("bfterm_ident_list") => {
-                    let expr;
-                    match pair.as_rule() {
-                        Rule::Identifier => {
-                            let id = pair.as_str().to_string();
-                            // try to find id in env
-                            if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
-                                // if found, create a variable expression
-                                expr = GExpr::Var(id);
-                            } else {
-                                panic!("Variable {} not found in environment", id);
-                            }
+        let length = pairs.clone().into_inner().count();
+        if length == 1 {
+            let pair = pairs.clone().into_inner().next().unwrap();
+            match pair.as_rule() {
+                Rule::Identifier => self.visit_bfterm_ident(pair),
+                Rule::Literal => self.visit_bfterm_literal(pair),
+                _ => unreachable!(
+                    "BfTerm should only have Identifier or Literal as children when length is 1"
+                ),
+            }
+        } else {
+            let mut expr = GExpr::Var("".to_string());
+            let mut id = String::new();
+            for pair in pairs.clone().into_inner() {
+                match pair.as_rule() {
+                    Rule::Identifier => {
+                        id = pair.as_str().to_string();
+                        // try to find id in env
+                        if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
+                            // if found, create a variable expression
+                            expr = GExpr::Var(id.clone());
+                            env.push((id, sort.clone()));
+                        } else {
+                            panic!("Variable {} not found in environment", id);
                         }
-                        Rule::Literal => {
-                            let id = pair.as_str().to_string();
-                            // try to parse id into a sort
-                            match pair.into_inner().next().unwrap().as_rule() {
-                                Rule::Numeral => {
-                                    let val = id.parse::<i64>().unwrap();
-                                    expr = GExpr::ConstInt(val);
-                                }
-                                Rule::BoolConst => {
-                                    let val = id.parse::<bool>().unwrap();
-                                    expr = GExpr::ConstBool(val);
-                                }
-                                Rule::HexConst => {
-                                    let val = u64::from_str_radix(&id[2..], 16).unwrap();
-                                    expr = GExpr::ConstBitVec(val);
-                                }
-                                Rule::StringConst => {
-                                    expr = GExpr::Var(id);
-                                }
-                                _ => continue,
-                            }
-                        }
-                        Rule::BfTerm => {
-                            expr = self.visit_bf_term(&env, pair)?;
-                        }
-                        _ => continue,
                     }
-                    expr
+                    Rule::BfTerm => {
+                        expr = self.visit_bf_term(&env, pair)?;
+                        // TODO: need to store the id, sort, and expr
+                    }
+                    _ => unreachable!(
+                        "The third branch should only have Identifier or Term as children"
+                    ),
                 }
-                _ => continue,
-            };
+            }
+            Ok(expr)
         }
-        Ok(GExpr::Var("".to_string()))
     }
     fn visit_sorted_var(&mut self, pairs: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>> {
         let mut var_name = String::new();
@@ -501,7 +480,7 @@ impl Visitor for SyGuSVisitor {
                 Ok(Expr::ConstBitVec(val))
             }
             Rule::StringConst => Ok(Expr::Var(id)),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
     fn visit_term_ident_list(
@@ -568,7 +547,7 @@ impl Visitor for SyGuSVisitor {
                 Ok(GExpr::ConstBitVec(val))
             }
             Rule::StringConst => Ok(GExpr::Var(id)),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -647,7 +626,10 @@ mod tests {
     #[test]
     fn test_visit_main() {
         let project_root = env!("CARGO_MANIFEST_DIR");
-        let filename = format!("{}/benchmarks/bitvector-benchmarks/parity-AIG-d0.sl", project_root);
+        let filename = format!(
+            "{}/benchmarks/bitvector-benchmarks/parity-AIG-d0.sl",
+            project_root
+        );
         let input = fs::read_to_string(&filename).unwrap();
         let res = parse(&input);
         let res = match res {

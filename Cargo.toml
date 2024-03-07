@@ -14,7 +14,7 @@ egg = "0.9.5"
 log4rs = "1.3.0"
 pest = "2.7.7"
 pest_derive = { version = "2.7.7", features = [
-    "grammar-extras",
+    # "grammar-extras",
 ] } # enable `#tag`
 strum = "0.26"
 strum_macros = "0.26"
