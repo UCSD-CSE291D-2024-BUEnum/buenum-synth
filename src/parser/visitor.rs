@@ -5,6 +5,8 @@ use pest::error::Error;
 use pest::iterators::Pair;
 use std::collections::HashMap;
 
+use super::ast;
+
 pub trait Visitor {
     type Env;
     fn visit_main(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
@@ -16,19 +18,19 @@ pub trait Visitor {
     fn visit_check_synth(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     fn visit_constraint(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     fn visit_declare_var(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    fn visit_synthe_fun(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_synth_fun(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     // SmtCmd
     fn visit_define_fun(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     fn visit_set_logic(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     fn visit_set_option(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     // GrammarDef
-    fn visit_grammar_def(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    fn visit_grouped_rule_list(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    fn visit_gterm(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_grammar_def(&mut self, pair: Pair<Rule>) -> Result<GrammarDef, Error<Rule>>;
+    fn visit_grouped_rule_list(&mut self, pair: Pair<Rule>) -> Result<Production, Error<Rule>>;
+    fn visit_gterm(&mut self, pair: Pair<Rule>) -> Result<GTerm, Error<Rule>>;
     // Term
     fn visit_term(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
     fn visit_bf_term(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
-    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>>;
     // fn visit_var_binding(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
     // Term productions
     fn visit_term_ident(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
@@ -44,7 +46,7 @@ pub trait Visitor {
     fn visit_bfterm_ident_list(&mut self, pair: Pair<Rule>) -> Result<Vec<Expr>, Error<Rule>>;
     // fn visit_bfterm_attri(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     // Sort
-    fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<Sort, Error<Rule>>;
 }
 
 pub struct SyGuSVisitor {
@@ -98,7 +100,7 @@ impl Visitor for SyGuSVisitor {
                         Some("check_synth") => self.visit_check_synth(pair)?,
                         Some("constraint") => self.visit_constraint(pair)?,
                         Some("declare_var") => self.visit_declare_var(pair)?,
-                        Some("synthe_fun") => self.visit_synthe_fun(pair)?,
+                        Some("synthe_fun") => self.visit_synth_fun(pair)?,
                         _ => unreachable!(),
                     };
                 }
@@ -127,7 +129,8 @@ impl Visitor for SyGuSVisitor {
         for pair in pair.into_inner() {
             match pair.as_rule() {
                 Rule::Term => {
-                    self.visit_term(pair)?;
+                    let constr_expr = self.visit_term(pair)?;
+                    self.sygus_prog.constraints.push(constr_expr);
                 }
                 _ => unreachable!(),
             }
@@ -135,35 +138,173 @@ impl Visitor for SyGuSVisitor {
         Ok(&self.sygus_prog)
     }
     fn visit_declare_var(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        let mut var_name;
+        let mut var_sort;
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::Symbol => {
+                    var_name = pair.as_str().to_string();
+                }
+                Rule::Sort => {
+                    var_sort = self.visit_sort(pair)?;
+                }
+                _ => unreachable!(),
+            }
+        }
+        self.sygus_prog.declare_var.insert(var_name, var_sort);
         Ok(&self.sygus_prog)
     }
-    fn visit_synthe_fun(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+    fn visit_synth_fun(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        let mut sorted_vars = Vec::new();
+        let mut func_name;
+        let mut ret_sort;
+        let mut body;
+        let mut grammar_def = GrammarDef::new(); // optional
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::Symbol => {
+                    func_name = pair.as_str().to_string();
+                }
+                Rule::SortedVar => {
+                    let (var_name, var_sort) = self.visit_sorted_var(pair)?;
+                    sorted_vars.push((var_name, var_sort));
+                }
+                Rule::Sort => {
+                    ret_sort = self.visit_sort(pair)?;
+                }
+                Rule::Term => {
+                    body = self.visit_term(pair)?;
+                }
+                Rule::GrammarDef => {
+                    grammar_def = self.visit_grammar_def(pair)?;
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        let func_body = FuncBody {
+            name: func_name,
+            params: sorted_vars,
+            return_type: ret_sort,
+            body: body,
+        };
+        self.sygus_prog.synthe_func.insert(func_name, grammar_def);
         Ok(&self.sygus_prog)
     }
     // SmtCmd
     fn visit_define_fun(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        let mut func_name;
+        let mut sorted_vars = Vec::new();
+        let mut ret_sort;
+        let mut body;
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::Symbol => {
+                    func_name = pair.as_str().to_string();
+                }
+                Rule::SortedVar => {
+                    let (var_name, var_sort) = self.visit_sorted_var(pair)?;
+                    sorted_vars.push((var_name, var_sort));
+                }
+                Rule::Sort => {
+                    ret_sort = self.visit_sort(pair)?;
+                }
+                Rule::Term => {
+                    body = self.visit_term(pair)?;
+                }
+                _ => unreachable!(),
+            }
+        }
+        let func_body = FuncBody {
+            name: func_name,
+            params: sorted_vars,
+            return_type: ret_sort,
+            body: body,
+        };
+        self.sygus_prog.define_fun.insert(func_name, func_body);
         Ok(&self.sygus_prog)
     }
     fn visit_set_logic(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        // only one child
+        let logic = pair.into_inner().next().unwrap().as_str();
+        match logic {
+            "LIA" => self.sygus_prog.set_logic = SetLogic::LIA,
+            "BV" => self.sygus_prog.set_logic = SetLogic::BV,
+            _ => self.sygus_prog.set_logic = SetLogic::Unknown,
+        }
         Ok(&self.sygus_prog)
     }
     fn visit_set_option(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        let mut opt_name;
+        let mut opt_value;
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::Keyword => {
+                    opt_name = pair.as_str().to_string();
+                }
+                Rule::Literal => {
+                    opt_value = pair.as_str().to_string();
+                }
+                _ => unreachable!(),
+            }
+        }
+        self.sygus_prog.set_option.insert(opt_name, opt_value);
         Ok(&self.sygus_prog)
     }
     // GrammarDef
-    fn visit_grammar_def(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
+    fn visit_grammar_def(&mut self, pair: Pair<Rule>) -> Result<GrammarDef, Error<Rule>> {
+        let mut grammar_def = GrammarDef::new();
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::GroupedRuleList => {
+                    let production = self.visit_grouped_rule_list(pair)?;
+                    grammar_def.non_terminals.push(production);
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(grammar_def)
     }
-    fn visit_grouped_rule_list(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
+    fn visit_grouped_rule_list(&mut self, pair: Pair<Rule>) -> Result<Production, Error<Rule>> {
+        let mut production = Production::new();
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::Symbol => {
+                    production.lhs = pair.as_str().to_string();
+                }
+                Rule::Sort => {
+                    production.lhs_sort = self.visit_sort(pair)?;
+                }
+                Rule::GTerm => {
+                    let gterm = self.visit_gterm(pair)?;
+                    production.rhs.push(gterm);
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(production)
     }
-    fn visit_gterm(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
+    fn visit_gterm(&mut self, pair: Pair<Rule>) -> Result<GTerm, Error<Rule>> {
+        let mut gterm = GTerm::None;
+        // only one child
+        let pair = pair.into_inner().next().unwrap();
+        match pair.as_node_tag() {
+            Some("gterm_constant") => {
+                let sort = self.visit_sort(pair)?;
+                gterm = GTerm::Constant(sort);
+            }
+            Some("gterm_variable") => {
+                let sort = self.visit_sort(pair)?;
+                gterm = GTerm::Variable(sort);
+            }
+            _ => todo!("BfTerm in gterm not implemented")
+        }
+        Ok(gterm)
     }
     // Term
     fn visit_term(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
     fn visit_bf_term(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
-    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
+    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>> {}
     // Term productions
     fn visit_term_ident(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
     fn visit_term_literal(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
@@ -173,8 +314,26 @@ impl Visitor for SyGuSVisitor {
     fn visit_bfterm_literal(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
     fn visit_bfterm_ident_list(&mut self, pair: Pair<Rule>) -> Result<Vec<Expr>, Error<Rule>> {}
     // Sort
-    fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
+    fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<Sort, Error<Rule>> {
+        let mut sort = Sort::None;
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::Sort => {
+                    match pair.as_str() {
+                        "Bool" => sort = Sort::Bool,
+                        "Int" => sort = Sort::Int,
+                        // TODO: BitVec should have a bit width, need to parse it from sibling
+                        "BitVec" => {
+                            let bit_width = pair.as_str().parse::<i32>().unwrap();
+                            sort = Sort::BitVec(bit_width);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(sort)
     }
 }
 
@@ -182,8 +341,7 @@ impl Visitor for SyGuSVisitor {
 mod tests {
     use std::fs;
 
-    use super::*;
-    use crate::parser::{parse, SyGuSParser};
+    use crate::parser::parse;
 
     #[test]
     fn test_visit_main() {

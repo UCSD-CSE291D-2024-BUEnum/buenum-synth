@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-type FuncName = String;
-type OptName = String;
-type OptValue = String;
-type Symbol = String;
-type ProdName = String;
-type ProdType = Sort;
+pub type FuncName = String;
+pub type OptName = String;
+pub type OptValue = String;
+pub type Symbol = String;
+pub type ProdName = String;
+pub type ProdSort = Sort;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SyGuSProg {
@@ -92,11 +92,28 @@ pub enum Expr {
 pub struct GrammarDef {
     pub non_terminals: Vec<Production>,
 }
+impl GrammarDef {
+    pub fn new() -> GrammarDef {
+        GrammarDef {
+            non_terminals: Vec::new(),
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq)]
 pub struct Production {
     pub lhs: ProdName,
-    pub lhs_type: ProdType,
+    pub lhs_sort: ProdSort,
     pub rhs: Vec<GTerm>,
+}
+impl Production {
+    pub fn new() -> Production {
+        Production {
+            lhs: "".to_string(),
+            lhs_sort: Sort::None,
+            rhs: Vec::new(),
+        }
+    }
+    
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -104,4 +121,18 @@ pub enum GTerm {
     Constant(Sort),
     Variable(Sort),
     FuncApply(Symbol, Vec<GTerm>),
+
+    None,
+}
+
+impl GTerm {
+    pub fn get_sort(&self) -> Sort {
+        match self {
+            GTerm::Constant(s) => s.clone(),
+            GTerm::Variable(s) => s.clone(),
+            GTerm::FuncApply(_, _) => Sort::None,
+            GTerm::None => Sort::None,
+        }
+    }
+    
 }

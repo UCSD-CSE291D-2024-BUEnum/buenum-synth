@@ -159,10 +159,10 @@ SmtCmd = {
   | #set_option  = "(" ~ "set-option" ~"s"? ~ Keyword ~ Literal ~ ")"
 }
 
-GrammarDef      = { "(" ~ SortedVar+ ~ ")" ~ "(" ~ GroupedRuleList+ ~ ")" }
+GrammarDef      = { ("(" ~ SortedVar+ ~ ")")? ~ "(" ~ GroupedRuleList+ ~ ")" }
 GroupedRuleList = { "(" ~ Symbol ~ Sort ~ "(" ~ GTerm+ ~ ")" ~ ")" }
 GTerm           = {
-    "(" ~ "Constant" ~ Sort ~ ")"
-  | "(" ~ "Variable" ~ Sort ~ ")"
-  | BfTerm
+    #gterm_constant = "(" ~ "Constant" ~ Sort ~ ")"
+  | #gterm_variable = "(" ~ "Variable" ~ Sort ~ ")"
+  | #bfterm = BfTerm
 }
