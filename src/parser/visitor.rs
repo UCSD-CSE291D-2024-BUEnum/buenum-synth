@@ -12,64 +12,64 @@ use super::ast;
 pub trait Visitor {
     type Prog;
     type Env;
-    fn visit_main(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    fn visit_main(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
     // SyGuG
-    fn visit_sygus(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
-    fn visit_cmd(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
-    fn visit_smt_cmd(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    fn visit_sygus(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    fn visit_cmd(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    fn visit_smt_cmd(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
     // Cmd
-    fn visit_check_synth(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    fn visit_check_synth(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
     fn visit_constraint(
         &mut self,
         env: &Self::Env,
-        pair: Pair<Rule>,
+        pairs: Pair<Rule>,
     ) -> Result<&Self::Prog, Error<Rule>>;
-    fn visit_declare_var(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
-    fn visit_synth_fun(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    fn visit_declare_var(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    fn visit_synth_fun(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
     // SmtCmd
-    fn visit_define_fun(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
-    fn visit_set_logic(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
-    fn visit_set_option(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    fn visit_define_fun(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    fn visit_set_logic(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    fn visit_set_option(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
     // GrammarDef
     fn visit_grammar_def(
         &mut self,
         env: &Self::Env,
-        pair: Pair<Rule>,
+        pairs: Pair<Rule>,
     ) -> Result<GrammarDef, Error<Rule>>;
     fn visit_grouped_rule_list(
         &mut self,
         env: &Self::Env,
-        pair: Pair<Rule>,
+        pairs: Pair<Rule>,
     ) -> Result<Production, Error<Rule>>;
-    fn visit_gterm(&mut self, env: &Self::Env, pair: Pair<Rule>) -> Result<GTerm, Error<Rule>>;
+    fn visit_gterm(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GTerm, Error<Rule>>;
     // Term
-    fn visit_term(&mut self, env: &Self::Env, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
-    fn visit_bf_term(&mut self, env: &Self::Env, pair: Pair<Rule>) -> Result<GExpr, Error<Rule>>;
-    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>>;
-    // fn visit_var_binding(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_bf_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>>;
+    fn visit_sorted_var(&mut self, pairs: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>>;
+    // fn visit_var_binding(&mut self, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>>;
     // Term productions
-    fn visit_term_ident(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
-    fn visit_term_literal(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_term_ident(&mut self, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_term_literal(&mut self, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>>;
     fn visit_term_ident_list(
         &mut self,
         env: &Self::Env,
-        pair: Pair<Rule>,
+        pairs: Pair<Rule>,
     ) -> Result<Vec<Expr>, Error<Rule>>;
-    // fn visit_term_attri(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
-    // fn visit_term_exist(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
-    // fn visit_term_forall(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
-    // fn visit_term_let(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    // fn visit_term_attri(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    // fn visit_term_exist(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    // fn visit_term_forall(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    // fn visit_term_let(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
     // BfTerm productions
-    fn visit_bfterm_ident(&mut self, pair: Pair<Rule>) -> Result<GExpr, Error<Rule>>;
-    fn visit_bfterm_literal(&mut self, pair: Pair<Rule>) -> Result<GExpr, Error<Rule>>;
+    fn visit_bfterm_ident(&mut self, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>>;
+    fn visit_bfterm_literal(&mut self, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>>;
     fn visit_bfterm_ident_list(
         &mut self,
         env: &Self::Env,
-        pair: Pair<Rule>,
+        pairs: Pair<Rule>,
     ) -> Result<Vec<GExpr>, Error<Rule>>;
-    // fn visit_bfterm_attri(&mut self, pair: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
+    // fn visit_bfterm_attri(&mut self, pairs: Pair<Rule>) -> Result<&Self::Prog, Error<Rule>>;
     // Sort
-    fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<Sort, Error<Rule>>;
+    fn visit_sort(&mut self, pairs: Pair<Rule>) -> Result<Sort, Error<Rule>>;
 }
 
 pub struct SyGuSVisitor {
@@ -87,31 +87,31 @@ impl SyGuSVisitor {
 impl Visitor for SyGuSVisitor {
     type Prog = SyGuSProg;
     type Env = Vec<(String, Sort)>;
-    fn visit_main(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        for pair in pair.into_inner() {
+    fn visit_main(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::SyGuS => {
                     self.visit_sygus(pair)?;
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         Ok(&self.sygus_prog)
     }
     // SyGuG
-    fn visit_sygus(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        for pair in pair.into_inner() {
+    fn visit_sygus(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Cmd => {
                     self.visit_cmd(pair)?;
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         Ok(&self.sygus_prog)
     }
-    fn visit_cmd(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        for pair in pair.into_inner() {
+    fn visit_cmd(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::SmtCmd => {
                     self.visit_smt_cmd(pair)?;
@@ -133,28 +133,30 @@ impl Visitor for SyGuSVisitor {
                         }
                         Some("declare_var") => self.visit_declare_var(pair)?,
                         Some("synthe_fun") => self.visit_synth_fun(pair)?,
-                        _ => unreachable!(),
+                        _ => continue,
                     };
                 }
             }
         }
         Ok(&self.sygus_prog)
     }
-    fn visit_smt_cmd(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        for pair in pair.into_inner() {
+    fn visit_smt_cmd(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        // panic!("{:#?}", pairs);
+        for pair in pairs.clone().into_inner() {
             match pair.as_node_tag() {
                 Some("define_fun") => self.visit_define_fun(pair)?,
                 Some("set_logic") => self.visit_set_logic(pair)?,
                 Some("set_option") => self.visit_set_option(pair)?,
                 _ => {
-                    panic!("{:#?}", pair);
+                    //    do nothing
+                    continue;
                 }
             };
         }
         Ok(&self.sygus_prog)
     }
     // Cmd
-    fn visit_check_synth(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+    fn visit_check_synth(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         // TODO: when running into this, we should call the solver with current collected SyGuSProg information
         // Implement in the last step
         Ok(&self.sygus_prog)
@@ -162,23 +164,23 @@ impl Visitor for SyGuSVisitor {
     fn visit_constraint(
         &mut self,
         env: &Self::Env,
-        pair: Pair<Rule>,
+        pairs: Pair<Rule>,
     ) -> Result<&SyGuSProg, Error<Rule>> {
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Term => {
                     let constr_expr = self.visit_term(env, pair)?;
                     self.sygus_prog.constraints.push(constr_expr);
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         Ok(&self.sygus_prog)
     }
-    fn visit_declare_var(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+    fn visit_declare_var(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         let mut var_name = String::new();
-        let mut var_sort = Sort::None ;
-        for pair in pair.into_inner() {
+        let mut var_sort = Sort::None;
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Symbol => {
                     var_name = pair.as_str().to_string();
@@ -186,22 +188,21 @@ impl Visitor for SyGuSVisitor {
                 Rule::Sort => {
                     var_sort = self.visit_sort(pair)?;
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
-        if (var_name.is_empty()) || (var_sort == Sort::None) {
-            panic!("Variable name or sort not found in declare_var");
+        if (!var_name.is_empty()) && (var_sort != Sort::None) {
+            self.sygus_prog.declare_var.insert(var_name, var_sort);
         }
-        self.sygus_prog.declare_var.insert(var_name, var_sort);
         Ok(&self.sygus_prog)
     }
-    fn visit_synth_fun(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+    fn visit_synth_fun(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         let mut sorted_vars = Vec::new();
         let mut func_name = String::new();
         let mut ret_sort = Sort::None;
         let mut body = Expr::Var("".to_string());
         let mut grammar_def = GrammarDef::new(); // optional
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Symbol => {
                     func_name = pair.as_str().to_string();
@@ -219,7 +220,7 @@ impl Visitor for SyGuSVisitor {
                 Rule::GrammarDef => {
                     grammar_def = self.visit_grammar_def(&sorted_vars, pair)?;
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
 
@@ -228,16 +229,18 @@ impl Visitor for SyGuSVisitor {
             params: sorted_vars,
             return_type: ret_sort,
         };
-        self.sygus_prog.synthe_func.insert(func_name, (synth_func, grammar_def));
+        self.sygus_prog
+            .synthe_func
+            .insert(func_name, (synth_func, grammar_def));
         Ok(&self.sygus_prog)
     }
     // SmtCmd
-    fn visit_define_fun(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+    fn visit_define_fun(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         let mut func_name = String::new();
         let mut sorted_vars = Vec::new();
         let mut ret_sort = Sort::None;
         let mut body = Expr::Var("".to_string());
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Symbol => {
                     func_name = pair.as_str().to_string();
@@ -253,7 +256,7 @@ impl Visitor for SyGuSVisitor {
                     let env = sorted_vars.clone();
                     body = self.visit_term(&env, pair)?;
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         let func_body = FuncBody {
@@ -265,9 +268,9 @@ impl Visitor for SyGuSVisitor {
         self.sygus_prog.define_fun.insert(func_name, func_body);
         Ok(&self.sygus_prog)
     }
-    fn visit_set_logic(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+    fn visit_set_logic(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         // only one child
-        let logic = pair.into_inner().next().unwrap().as_str();
+        let logic = pairs.as_str();
         match logic {
             "LIA" => self.sygus_prog.set_logic = SetLogic::LIA,
             "BV" => self.sygus_prog.set_logic = SetLogic::BV,
@@ -275,10 +278,10 @@ impl Visitor for SyGuSVisitor {
         }
         Ok(&self.sygus_prog)
     }
-    fn visit_set_option(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+    fn visit_set_option(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         let mut opt_name = String::new();
         let mut opt_value = String::new();
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Keyword => {
                     opt_name = pair.as_str().to_string();
@@ -286,7 +289,7 @@ impl Visitor for SyGuSVisitor {
                 Rule::Literal => {
                     opt_value = pair.as_str().to_string();
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         self.sygus_prog.set_option.insert(opt_name, opt_value);
@@ -296,16 +299,16 @@ impl Visitor for SyGuSVisitor {
     fn visit_grammar_def(
         &mut self,
         env: &Self::Env,
-        pair: Pair<Rule>,
+        pairs: Pair<Rule>,
     ) -> Result<GrammarDef, Error<Rule>> {
         let mut grammar_def = GrammarDef::new();
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::GroupedRuleList => {
                     let production = self.visit_grouped_rule_list(env, pair)?;
                     grammar_def.non_terminals.push(production);
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         Ok(grammar_def)
@@ -313,10 +316,10 @@ impl Visitor for SyGuSVisitor {
     fn visit_grouped_rule_list(
         &mut self,
         env: &Self::Env,
-        pair: Pair<Rule>,
+        pairs: Pair<Rule>,
     ) -> Result<Production, Error<Rule>> {
         let mut production = Production::new();
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Symbol => {
                     production.lhs = pair.as_str().to_string();
@@ -328,15 +331,15 @@ impl Visitor for SyGuSVisitor {
                     let gterm = self.visit_gterm(env, pair)?;
                     production.rhs.push(gterm);
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         Ok(production)
     }
-    fn visit_gterm(&mut self, env: &Self::Env, pair: Pair<Rule>) -> Result<GTerm, Error<Rule>> {
+    fn visit_gterm(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GTerm, Error<Rule>> {
         let mut gterm = GTerm::None;
         // only one child
-        let pair = pair.into_inner().next().unwrap();
+        let pair = pairs.clone().into_inner().next().unwrap();
         match pair.as_node_tag() {
             Some("gterm_constant") => {
                 let sort = self.visit_sort(pair)?;
@@ -355,9 +358,9 @@ impl Visitor for SyGuSVisitor {
         Ok(gterm)
     }
     // Term
-    fn visit_term(&mut self, env: &Self::Env, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {
+    fn visit_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
         let mut env = env.clone();
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_node_tag() {
                 Some("term_ident") => self.visit_term_ident(pair)?,
                 Some("term_literal") => self.visit_term_literal(pair)?,
@@ -393,24 +396,24 @@ impl Visitor for SyGuSVisitor {
                                 Rule::StringConst => {
                                     expr = Expr::Var(id);
                                 }
-                                _ => unreachable!(),
+                                _ => continue,
                             }
                         }
                         Rule::Term => {
                             expr = self.visit_term(&env, pair)?;
                         }
-                        _ => unreachable!(),
+                        _ => continue,
                     }
                     expr
                 }
-                _ => unreachable!(),
+                _ => continue,
             };
         }
         Ok(Expr::Var("".to_string()))
     }
-    fn visit_bf_term(&mut self, env: &Self::Env, pair: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
+    fn visit_bf_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
         let mut env = env.clone();
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_node_tag() {
                 Some("bfterm_ident") => self.visit_bfterm_ident(pair)?,
                 Some("bfterm_literal") => self.visit_bfterm_literal(pair)?,
@@ -446,25 +449,25 @@ impl Visitor for SyGuSVisitor {
                                 Rule::StringConst => {
                                     expr = GExpr::Var(id);
                                 }
-                                _ => unreachable!(),
+                                _ => continue,
                             }
                         }
                         Rule::BfTerm => {
                             expr = self.visit_bf_term(&env, pair)?;
                         }
-                        _ => unreachable!(),
+                        _ => continue,
                     }
                     expr
                 }
-                _ => unreachable!(),
+                _ => continue,
             };
         }
         Ok(GExpr::Var("".to_string()))
     }
-    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>> {
+    fn visit_sorted_var(&mut self, pairs: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>> {
         let mut var_name = String::new();
         let mut var_sort = Sort::None;
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Symbol => {
                     var_name = pair.as_str().to_string();
@@ -472,19 +475,19 @@ impl Visitor for SyGuSVisitor {
                 Rule::Sort => {
                     var_sort = self.visit_sort(pair)?;
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         Ok((var_name, var_sort))
     }
     // Term productions
-    fn visit_term_ident(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {
-        let id = pair.as_str().to_string();
+    fn visit_term_ident(&mut self, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
+        let id = pairs.as_str().to_string();
         Ok(Expr::Var(id))
     }
-    fn visit_term_literal(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {
-        let id = pair.as_str().to_string();
-        match pair.into_inner().next().unwrap().as_rule() {
+    fn visit_term_literal(&mut self, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
+        let id = pairs.as_str().to_string();
+        match pairs.clone().into_inner().next().unwrap().as_rule() {
             Rule::Numeral => {
                 let val = id.parse::<i64>().unwrap();
                 Ok(Expr::ConstInt(val))
@@ -498,16 +501,16 @@ impl Visitor for SyGuSVisitor {
                 Ok(Expr::ConstBitVec(val))
             }
             Rule::StringConst => Ok(Expr::Var(id)),
-            _ => unreachable!(),
+            _ => unreachable!()
         }
     }
     fn visit_term_ident_list(
         &mut self,
         env: &Self::Env,
-        pair: Pair<Rule>,
+        pairs: Pair<Rule>,
     ) -> Result<Vec<Expr>, Error<Rule>> {
         let mut exprs = Vec::new();
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Identifier => {
                     let id = pair.as_str().to_string();
@@ -531,27 +534,27 @@ impl Visitor for SyGuSVisitor {
                         Rule::StringConst => {
                             exprs.push(Expr::Var(id));
                         }
-                        _ => unreachable!(),
+                        _ => continue,
                     }
                 }
                 Rule::Term => {
                     let expr = self.visit_term(env, pair)?;
                     exprs.push(expr);
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         Ok(exprs)
     }
     // BfTerm productions
-    fn visit_bfterm_ident(&mut self, pair: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
-        let id = pair.as_str().to_string();
+    fn visit_bfterm_ident(&mut self, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
+        let id = pairs.as_str().to_string();
         Ok(GExpr::Var(id))
     }
 
-    fn visit_bfterm_literal(&mut self, pair: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
-        let id = pair.as_str().to_string();
-        match pair.into_inner().next().unwrap().as_rule() {
+    fn visit_bfterm_literal(&mut self, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
+        let id = pairs.as_str().to_string();
+        match pairs.clone().into_inner().next().unwrap().as_rule() {
             Rule::Numeral => {
                 let val = id.parse::<i64>().unwrap();
                 Ok(GExpr::ConstInt(val))
@@ -565,17 +568,17 @@ impl Visitor for SyGuSVisitor {
                 Ok(GExpr::ConstBitVec(val))
             }
             Rule::StringConst => Ok(GExpr::Var(id)),
-            _ => unreachable!(),
+            _ => unreachable!()
         }
     }
 
     fn visit_bfterm_ident_list(
         &mut self,
         env: &Self::Env,
-        pair: Pair<Rule>,
+        pairs: Pair<Rule>,
     ) -> Result<Vec<GExpr>, Error<Rule>> {
         let mut exprs = Vec::new();
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Identifier => {
                     let id = pair.as_str().to_string();
@@ -599,22 +602,22 @@ impl Visitor for SyGuSVisitor {
                         Rule::StringConst => {
                             exprs.push(GExpr::Var(id));
                         }
-                        _ => unreachable!(),
+                        _ => continue,
                     }
                 }
                 Rule::BfTerm => {
                     let expr = self.visit_bfterm_ident(pair)?;
                     exprs.push(expr);
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         Ok(exprs)
     }
     // Sort
-    fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<Sort, Error<Rule>> {
+    fn visit_sort(&mut self, pairs: Pair<Rule>) -> Result<Sort, Error<Rule>> {
         let mut sort = Sort::None;
-        for pair in pair.into_inner() {
+        for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Sort => {
                     match pair.as_str() {
@@ -625,10 +628,10 @@ impl Visitor for SyGuSVisitor {
                             let bit_width = pair.as_str().parse::<i32>().unwrap();
                             sort = Sort::BitVec(bit_width);
                         }
-                        _ => unreachable!(),
+                        _ => continue,
                     }
                 }
-                _ => unreachable!(),
+                _ => continue,
             }
         }
         Ok(sort)
@@ -643,9 +646,8 @@ mod tests {
 
     #[test]
     fn test_visit_main() {
-        let filename =
-            "/home/jerry/Projects/buenum-synth/benchmarks/bitvector-benchmarks/parity-AIG-d0.sl"
-                .to_string();
+        let project_root = env!("CARGO_MANIFEST_DIR");
+        let filename = format!("{}/benchmarks/bitvector-benchmarks/parity-AIG-d0.sl", project_root);
         let input = fs::read_to_string(&filename).unwrap();
         let res = parse(&input);
         let res = match res {
@@ -655,6 +657,7 @@ mod tests {
             }
         };
         // pretty print
-        println!("{:#?}", res);
+        // println!("{:#?}", res);
+        panic!("{:#?}", res);
     }
 }

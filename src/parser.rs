@@ -8,6 +8,7 @@ use pest_derive::Parser;
 use self::visitor::SyGuSVisitor;
 use crate::parser::visitor::Visitor;
 
+
 #[derive(Parser)]
 #[grammar = "parser/grammar.pest"] // relative to project `src`
 pub struct SyGuSParser;
