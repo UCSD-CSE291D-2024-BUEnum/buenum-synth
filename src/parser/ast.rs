@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 pub type FuncName = String;
 pub type OptName = String;
@@ -12,7 +12,7 @@ pub struct SyGuSProg {
     pub set_logic: SetLogic,
     pub define_fun: HashMap<FuncName, FuncBody>,
     pub declare_var: HashMap<Symbol, Sort>,
-    pub synthe_func: HashMap<FuncName, GrammarDef>,
+    pub synthe_func: HashMap<FuncName, (SynthFun, GrammarDef)>,
     pub constraints: Vec<Expr>,
     pub set_option: HashMap<OptName, OptValue>,
 }
@@ -44,6 +44,13 @@ pub struct FuncBody {
     pub params: Vec<(Symbol, Sort)>, // retain parameter order
     pub return_type: Sort,
     pub body: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SynthFun {
+    pub name: FuncName,
+    pub params: Vec<(Symbol, Sort)>, // retain parameter order
+    pub return_type: Sort,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,26 +120,46 @@ impl Production {
             rhs: Vec::new(),
         }
     }
-    
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GTerm {
     Constant(Sort),
     Variable(Sort),
-    FuncApply(Symbol, Vec<GTerm>),
+    BfTerm(GExpr),
 
     None,
 }
 
-impl GTerm {
-    pub fn get_sort(&self) -> Sort {
-        match self {
-            GTerm::Constant(s) => s.clone(),
-            GTerm::Variable(s) => s.clone(),
-            GTerm::FuncApply(_, _) => Sort::None,
-            GTerm::None => Sort::None,
-        }
-    }
-    
+#[derive(Debug, Clone, PartialEq)]
+pub enum GExpr {
+    ConstBool(bool),
+    ConstInt(i64),
+    ConstBitVec(u64),
+    Var(Symbol),
+    FuncApply(FuncName, Vec<GExpr>),
+    Let(Vec<(Symbol, GExpr)>, Box<GExpr>),
+
+    // Bool
+    Not(Box<GExpr>),
+    And(Box<GExpr>, Box<GExpr>),
+    Or(Box<GExpr>, Box<GExpr>),
+    Xor(Box<GExpr>, Box<GExpr>),
+    Iff(Box<GExpr>, Box<GExpr>), // if and only if
+
+    // BitVec
+    BvAnd(Box<GExpr>, Box<GExpr>),
+    BvOr(Box<GExpr>, Box<GExpr>),
+    BvXor(Box<GExpr>, Box<GExpr>),
+    BvNot(Box<GExpr>),
+    BvAdd(Box<GExpr>, Box<GExpr>),
+    BvMul(Box<GExpr>, Box<GExpr>),
+    BvSub(Box<GExpr>, Box<GExpr>),
+    BvUdiv(Box<GExpr>, Box<GExpr>), // Unsigned division
+    BvUrem(Box<GExpr>, Box<GExpr>), // Unsigned remainder
+    BvShl(Box<GExpr>, Box<GExpr>),  // Logical shift left
+    BvLshr(Box<GExpr>, Box<GExpr>), // Logical shift right
+    BvNeg(Box<GExpr>),             // Negation
+    BvUlt(Box<GExpr>, Box<GExpr>),  // Unsigned less than
+    BvConst(i64, i32),            // param1: value, param2: bit width
 }
