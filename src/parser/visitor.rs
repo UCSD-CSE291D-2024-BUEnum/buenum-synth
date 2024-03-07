@@ -83,6 +83,41 @@ impl SyGuSVisitor {
         }
     }
 }
+macro_rules! parse_expr {
+    ($id:ident, $expr_type:ty, $self:ident, $env:expr, $pairs:expr, $visit_method:ident) => {
+        match $id.as_str() {
+            "not" => <$expr_type>::Not(Box::new($self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?)),
+            "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor" | "bvadd" | "bvmul" | "bvsub" | "bvudiv" | "bvurem" | "bvshl" | "bvlshr" | "bvult" => {
+                let mut exprs = Vec::new();
+                for pair in $pairs.into_inner() {
+                    let expr = $self.$visit_method($env, pair)?;
+                    exprs.push(expr);
+                }
+                match $id.as_str() {
+                    "and" => <$expr_type>::And(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "or" => <$expr_type>::Or(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "xor" => <$expr_type>::Xor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "iff" => <$expr_type>::Iff(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvand" => <$expr_type>::BvAnd(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvor" => <$expr_type>::BvOr(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvxor" => <$expr_type>::BvXor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvadd" => <$expr_type>::BvAdd(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvmul" => <$expr_type>::BvMul(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvsub" => <$expr_type>::BvSub(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvudiv" => <$expr_type>::BvUdiv(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvurem" => <$expr_type>::BvUrem(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvshl" => <$expr_type>::BvShl(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvlshr" => <$expr_type>::BvLshr(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "bvult" => <$expr_type>::BvUlt(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    _ => unreachable!(),
+                }
+            }
+            "bvnot" => <$expr_type>::BvNot(Box::new($self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?)),
+            "bvneg" => <$expr_type>::BvNeg(Box::new($self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?)),
+            _ => panic!("Unknown operator: {}", $id),
+        }
+    };
+}
 
 impl Visitor for SyGuSVisitor {
     type Prog = SyGuSProg;
@@ -205,7 +240,7 @@ impl Visitor for SyGuSVisitor {
         let mut sorted_vars = Vec::new();
         let mut func_name = String::new();
         let mut ret_sort = Sort::None;
-        let mut body = Expr::Var("".to_string());
+        let mut body = Expr::Var("".to_string(), Sort::None);
         let mut grammar_def = GrammarDef::new(); // optional
         for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
@@ -244,7 +279,7 @@ impl Visitor for SyGuSVisitor {
         let mut func_name = String::new();
         let mut sorted_vars = Vec::new();
         let mut ret_sort = Sort::None;
-        let mut body = Expr::Var("".to_string());
+        let mut body = Expr::Var("".to_string(), Sort::None);
         for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Symbol => {
@@ -261,7 +296,9 @@ impl Visitor for SyGuSVisitor {
                     let env = sorted_vars.clone();
                     body = self.visit_term(&env, pair)?;
                 }
-                _ => continue,
+                _ => unreachable!(
+                    "define_fun should only have Symbol, SortedVar, Sort, or Term as children"
+                ),
             }
         }
         let func_body = FuncBody {
@@ -275,8 +312,9 @@ impl Visitor for SyGuSVisitor {
     }
     fn visit_set_logic(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         // only one child
-        let logic = pairs.as_str();
-        match logic {
+        let pair = pairs.clone().into_inner().next().unwrap();
+        let pair_str = pair.as_str();
+        match pair.as_str() {
             "LIA" => self.sygus_prog.set_logic = SetLogic::LIA,
             "BV" => self.sygus_prog.set_logic = SetLogic::BV,
             _ => self.sygus_prog.set_logic = SetLogic::Unknown,
@@ -371,12 +409,12 @@ impl Visitor for SyGuSVisitor {
             match pair.as_rule() {
                 Rule::Identifier => self.visit_term_ident(pair),
                 Rule::Literal => self.visit_term_literal(pair),
-                _ => unreachable!(
-                    "Term should only have Identifier or Literal as children when length is 1"
+                other => unreachable!(
+                    "Term should only have Identifier or Literal as children when length is 1, but got {:?}", other
                 ),
             }
         } else {
-            let mut expr = Expr::Var("".to_string());
+            let mut expr = Expr::Var("".to_string(), Sort::None);
             let mut id = String::new();
             for pair in pairs.clone().into_inner() {
                 match pair.as_rule() {
@@ -385,11 +423,10 @@ impl Visitor for SyGuSVisitor {
                         // try to find id in env
                         if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
                             // if found, create a variable expression
-                            expr = Expr::Var(id.clone());
+                            expr = Expr::Var(id.clone(), sort.clone());
                             env.push((id, sort.clone()));
                         } else {
-                            panic!("Variable {} not found in environment", id);
-                        }
+                            expr = parse_expr!(id, Expr, self, &env, pairs.clone(), visit_term);                        }
                     }
                     Rule::Term => {
                         expr = self.visit_term(&env, pair)?;
@@ -403,6 +440,7 @@ impl Visitor for SyGuSVisitor {
             Ok(expr)
         }
     }
+    
     fn visit_bf_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
         let mut env = env.clone();
         let length = pairs.clone().into_inner().count();
@@ -416,7 +454,7 @@ impl Visitor for SyGuSVisitor {
                 ),
             }
         } else {
-            let mut expr = GExpr::Var("".to_string());
+            let mut expr = GExpr::Var("".to_string(), Sort::None);
             let mut id = String::new();
             for pair in pairs.clone().into_inner() {
                 match pair.as_rule() {
@@ -425,18 +463,17 @@ impl Visitor for SyGuSVisitor {
                         // try to find id in env
                         if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
                             // if found, create a variable expression
-                            expr = GExpr::Var(id.clone());
+                            expr = GExpr::Var(id.clone(), sort.clone());
                             env.push((id, sort.clone()));
                         } else {
-                            panic!("Variable {} not found in environment", id);
-                        }
+                            expr = parse_expr!(id, GExpr, self, &env, pairs.clone(), visit_bf_term);                        }
                     }
                     Rule::BfTerm => {
                         expr = self.visit_bf_term(&env, pair)?;
                         // TODO: need to store the id, sort, and expr
                     }
                     _ => unreachable!(
-                        "The third branch should only have Identifier or Term as children"
+                        "The third branch should only have Identifier or BfTerm as children"
                     ),
                 }
             }
@@ -446,6 +483,7 @@ impl Visitor for SyGuSVisitor {
     fn visit_sorted_var(&mut self, pairs: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>> {
         let mut var_name = String::new();
         let mut var_sort = Sort::None;
+        let pairs_str = format!("{:#?}", pairs.clone());
         for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Symbol => {
@@ -462,7 +500,7 @@ impl Visitor for SyGuSVisitor {
     // Term productions
     fn visit_term_ident(&mut self, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
         let id = pairs.as_str().to_string();
-        Ok(Expr::Var(id))
+        Ok(Expr::Var(id, Sort::None)) // TODO
     }
     fn visit_term_literal(&mut self, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
         let id = pairs.as_str().to_string();
@@ -479,7 +517,7 @@ impl Visitor for SyGuSVisitor {
                 let val = u64::from_str_radix(&id[2..], 16).unwrap();
                 Ok(Expr::ConstBitVec(val))
             }
-            Rule::StringConst => Ok(Expr::Var(id)),
+            Rule::StringConst => Ok(Expr::Var(id, Sort::None)), // TODO
             _ => unreachable!(),
         }
     }
@@ -493,7 +531,7 @@ impl Visitor for SyGuSVisitor {
             match pair.as_rule() {
                 Rule::Identifier => {
                     let id = pair.as_str().to_string();
-                    exprs.push(Expr::Var(id));
+                    exprs.push(Expr::Var(id, Sort::None));
                 }
                 Rule::Literal => {
                     let id = pair.as_str().to_string();
@@ -511,7 +549,7 @@ impl Visitor for SyGuSVisitor {
                             exprs.push(Expr::ConstBitVec(val));
                         }
                         Rule::StringConst => {
-                            exprs.push(Expr::Var(id));
+                            exprs.push(Expr::Var(id, Sort::None));
                         }
                         _ => continue,
                     }
@@ -528,7 +566,7 @@ impl Visitor for SyGuSVisitor {
     // BfTerm productions
     fn visit_bfterm_ident(&mut self, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
         let id = pairs.as_str().to_string();
-        Ok(GExpr::Var(id))
+        Ok(GExpr::Var(id, Sort::None))
     }
 
     fn visit_bfterm_literal(&mut self, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
@@ -546,7 +584,7 @@ impl Visitor for SyGuSVisitor {
                 let val = u64::from_str_radix(&id[2..], 16).unwrap();
                 Ok(GExpr::ConstBitVec(val))
             }
-            Rule::StringConst => Ok(GExpr::Var(id)),
+            Rule::StringConst => Ok(GExpr::Var(id, Sort::None)),
             _ => unreachable!(),
         }
     }
@@ -561,7 +599,7 @@ impl Visitor for SyGuSVisitor {
             match pair.as_rule() {
                 Rule::Identifier => {
                     let id = pair.as_str().to_string();
-                    exprs.push(GExpr::Var(id));
+                    exprs.push(GExpr::Var(id, Sort::None));
                 }
                 Rule::Literal => {
                     let id = pair.as_str().to_string();
@@ -579,7 +617,7 @@ impl Visitor for SyGuSVisitor {
                             exprs.push(GExpr::ConstBitVec(val));
                         }
                         Rule::StringConst => {
-                            exprs.push(GExpr::Var(id));
+                            exprs.push(GExpr::Var(id, Sort::None));
                         }
                         _ => continue,
                     }
@@ -596,21 +634,22 @@ impl Visitor for SyGuSVisitor {
     // Sort
     fn visit_sort(&mut self, pairs: Pair<Rule>) -> Result<Sort, Error<Rule>> {
         let mut sort = Sort::None;
+        let pairs_str = format!("{:#?}", pairs.clone());
         for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
-                Rule::Sort => {
-                    match pair.as_str() {
-                        "Bool" => sort = Sort::Bool,
-                        "Int" => sort = Sort::Int,
-                        // TODO: BitVec should have a bit width, need to parse it from sibling
-                        "BitVec" => {
-                            let bit_width = pair.as_str().parse::<i32>().unwrap();
-                            sort = Sort::BitVec(bit_width);
-                        }
-                        _ => continue,
+                Rule::Identifier => match pair.as_str() {
+                    "Bool" => sort = Sort::Bool,
+                    "Int" => sort = Sort::Int,
+                    "BitVec" => {
+                        let bit_width = pair.as_str().parse::<i32>().unwrap();
+                        sort = Sort::BitVec(bit_width);
                     }
+                    _ => unreachable!("Unknown sort"),
+                },
+                Rule::Sort => {
+                    sort = self.visit_sort(pair)?;
                 }
-                _ => continue,
+                _ => unreachable!("Sort should only have Identifier or Sort as children"),
             }
         }
         Ok(sort)

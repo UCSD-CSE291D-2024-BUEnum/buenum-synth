@@ -67,7 +67,7 @@ pub enum Expr {
     ConstBool(bool),
     ConstInt(i64),
     ConstBitVec(u64),
-    Var(Symbol),
+    Var(Symbol, Sort),
     FuncApply(FuncName, Vec<Expr>),
     Let(Vec<(Symbol, Expr)>, Box<Expr>),
 
@@ -136,7 +136,7 @@ pub enum GExpr {
     ConstBool(bool),
     ConstInt(i64),
     ConstBitVec(u64),
-    Var(Symbol),
+    Var(Symbol, Sort),
     FuncApply(FuncName, Vec<GExpr>),
     Let(Vec<(Symbol, GExpr)>, Box<GExpr>),
 
