@@ -26,26 +26,25 @@ pub trait Visitor {
     fn visit_grouped_rule_list(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     fn visit_gterm(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     // Term
-    fn visit_term(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    fn visit_bf_term(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    fn visit_var_binding(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_term(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_bf_term(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    // fn visit_var_binding(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
     // Term productions
-    fn visit_term_ident(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    fn visit_term_literal(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    fn visit_term_ident_list(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_term_ident(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_term_literal(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_term_ident_list(&mut self, pair: Pair<Rule>) -> Result<Vec<Expr>, Error<Rule>>;
     // fn visit_term_attri(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     // fn visit_term_exist(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     // fn visit_term_forall(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     // fn visit_term_let(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     // BfTerm productions
-    fn visit_bfterm_ident(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    fn visit_bfterm_literal(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    fn visit_bfterm_ident_list(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    fn visit_bfterm_ident(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_bfterm_literal(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>>;
+    fn visit_bfterm_ident_list(&mut self, pair: Pair<Rule>) -> Result<Vec<Expr>, Error<Rule>>;
     // fn visit_bfterm_attri(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     // Sort
     fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
-    // fn visit_var_binding(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
 }
 
 pub struct SyGuSVisitor {
@@ -120,9 +119,19 @@ impl Visitor for SyGuSVisitor {
     }
     // Cmd
     fn visit_check_synth(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        // TODO: when running into this, we should call the solver with current collected SyGuSProg information
+        // Implement in the last step
         Ok(&self.sygus_prog)
     }
     fn visit_constraint(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::Term => {
+                    self.visit_term(pair)?;
+                }
+                _ => unreachable!(),
+            }
+        }
         Ok(&self.sygus_prog)
     }
     fn visit_declare_var(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
@@ -152,38 +161,17 @@ impl Visitor for SyGuSVisitor {
         Ok(&self.sygus_prog)
     }
     // Term
-    fn visit_term(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
-    }
-    fn visit_bf_term(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
-    }
-    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
-    }
-    fn visit_var_binding(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
-    }
+    fn visit_term(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
+    fn visit_bf_term(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
+    fn visit_sorted_var(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
     // Term productions
-    fn visit_term_ident(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
-    }
-    fn visit_term_literal(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
-    }
-    fn visit_term_ident_list(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
-    }
+    fn visit_term_ident(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
+    fn visit_term_literal(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
+    fn visit_term_ident_list(&mut self, pair: Pair<Rule>) -> Result<Vec<Expr>, Error<Rule>> {}
     // BfTerm productions
-    fn visit_bfterm_ident(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
-    }
-    fn visit_bfterm_literal(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
-    }
-    fn visit_bfterm_ident_list(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        Ok(&self.sygus_prog)
-    }
+    fn visit_bfterm_ident(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
+    fn visit_bfterm_literal(&mut self, pair: Pair<Rule>) -> Result<Expr, Error<Rule>> {}
+    fn visit_bfterm_ident_list(&mut self, pair: Pair<Rule>) -> Result<Vec<Expr>, Error<Rule>> {}
     // Sort
     fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         Ok(&self.sygus_prog)

@@ -13,6 +13,7 @@ pub struct SyGuSProg {
     pub define_fun: HashMap<FuncName, FuncBody>,
     pub declare_var: HashMap<Symbol, Sort>,
     pub synthe_func: HashMap<FuncName, GrammarDef>,
+    pub constraints: Vec<Expr>,
     pub set_option: HashMap<OptName, OptValue>,
 }
 
@@ -23,6 +24,7 @@ impl SyGuSProg {
             define_fun: HashMap::new(),
             declare_var: HashMap::new(),
             synthe_func: HashMap::new(),
+            constraints: Vec::new(),
             set_option: HashMap::new(),
         }
     }
