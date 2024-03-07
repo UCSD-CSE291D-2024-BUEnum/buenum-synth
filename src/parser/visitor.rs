@@ -87,13 +87,14 @@ macro_rules! parse_expr {
     ($id:ident, $expr_type:ty, $self:ident, $env:expr, $pairs:expr, $visit_method:ident) => {
         match $id.as_str() {
             "not" => <$expr_type>::Not(Box::new($self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?)),
-            "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor" | "bvadd" | "bvmul" | "bvsub" | "bvudiv" | "bvurem" | "bvshl" | "bvlshr" | "bvult" => {
+            "=" | "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor" | "bvadd" | "bvmul" | "bvsub" | "bvudiv" | "bvurem" | "bvshl" | "bvlshr" | "bvult" => {
                 let mut exprs = Vec::new();
                 for pair in $pairs.into_inner() {
                     let expr = $self.$visit_method($env, pair)?;
                     exprs.push(expr);
                 }
                 match $id.as_str() {
+                    "=" => <$expr_type>::Equal(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
                     "and" => <$expr_type>::And(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
                     "or" => <$expr_type>::Or(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
                     "xor" => <$expr_type>::Xor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
@@ -114,7 +115,7 @@ macro_rules! parse_expr {
             }
             "bvnot" => <$expr_type>::BvNot(Box::new($self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?)),
             "bvneg" => <$expr_type>::BvNeg(Box::new($self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?)),
-            _ => panic!("Unknown operator: {}", $id),
+            _ => panic!("Unknown operator: {}\nCurrent environment: {:#?}", $id, $env),
         }
     };
 }
@@ -153,11 +154,24 @@ impl Visitor for SyGuSVisitor {
                     self.visit_check_synth(pair)?;
                 }
                 Rule::ConstraintCmd => {
-                    let env = Vec::from_iter(
+                    let mut env = Vec::from_iter(
                         self.sygus_prog
                             .declare_var
                             .iter()
                             .map(|(k, v)| (k.clone(), v.clone())),
+                    );
+                    // extend the funtions name from both define_fun and synth_fun
+                    env.extend(
+                        self.sygus_prog
+                            .define_fun
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.return_type.clone())),
+                    );
+                    env.extend(
+                        self.sygus_prog
+                            .synthe_func
+                            .iter()
+                            .map(|(k, (v, _))| (k.clone(), v.return_type.clone())),
                     );
                     self.visit_constraint(&env, pair)?;
                 }

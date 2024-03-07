@@ -77,6 +77,7 @@ pub enum Expr {
     Or(Box<Expr>, Box<Expr>),
     Xor(Box<Expr>, Box<Expr>),
     Iff(Box<Expr>, Box<Expr>), // if and only if
+    Equal(Box<Expr>, Box<Expr>),
 
     // BitVec
     BvAnd(Box<Expr>, Box<Expr>),
@@ -146,6 +147,7 @@ pub enum GExpr {
     Or(Box<GExpr>, Box<GExpr>),
     Xor(Box<GExpr>, Box<GExpr>),
     Iff(Box<GExpr>, Box<GExpr>), // if and only if
+    Equal(Box<GExpr>, Box<GExpr>),
 
     // BitVec
     BvAnd(Box<GExpr>, Box<GExpr>),
