@@ -86,36 +86,78 @@ impl SyGuSVisitor {
 macro_rules! parse_expr {
     ($id:ident, $expr_type:ty, $self:ident, $env:expr, $pairs:expr, $visit_method:ident) => {
         match $id.as_str() {
-            "not" => <$expr_type>::Not(Box::new($self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?)),
-            "=" | "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor" | "bvadd" | "bvmul" | "bvsub" | "bvudiv" | "bvurem" | "bvshl" | "bvlshr" | "bvult" => {
+            "not" => <$expr_type>::Not(Box::new(
+                $self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?,
+            )),
+            "=" | "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor" | "bvadd" | "bvmul"
+            | "bvsub" | "bvudiv" | "bvurem" | "bvshl" | "bvlshr" | "bvult" => {
                 let mut exprs = Vec::new();
                 for pair in $pairs.into_inner() {
                     let expr = $self.$visit_method($env, pair)?;
                     exprs.push(expr);
                 }
                 match $id.as_str() {
-                    "=" => <$expr_type>::Equal(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "and" => <$expr_type>::And(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "or" => <$expr_type>::Or(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "xor" => <$expr_type>::Xor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "iff" => <$expr_type>::Iff(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvand" => <$expr_type>::BvAnd(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvor" => <$expr_type>::BvOr(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvxor" => <$expr_type>::BvXor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvadd" => <$expr_type>::BvAdd(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvmul" => <$expr_type>::BvMul(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvsub" => <$expr_type>::BvSub(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvudiv" => <$expr_type>::BvUdiv(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvurem" => <$expr_type>::BvUrem(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvshl" => <$expr_type>::BvShl(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvlshr" => <$expr_type>::BvLshr(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
-                    "bvult" => <$expr_type>::BvUlt(Box::new(exprs[0].clone()), Box::new(exprs[1].clone())),
+                    "=" => {
+                        <$expr_type>::Equal(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "and" => {
+                        <$expr_type>::And(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "or" => {
+                        <$expr_type>::Or(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "xor" => {
+                        <$expr_type>::Xor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "iff" => {
+                        <$expr_type>::Iff(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvand" => {
+                        <$expr_type>::BvAnd(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvor" => {
+                        <$expr_type>::BvOr(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvxor" => {
+                        <$expr_type>::BvXor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvadd" => {
+                        <$expr_type>::BvAdd(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvmul" => {
+                        <$expr_type>::BvMul(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvsub" => {
+                        <$expr_type>::BvSub(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvudiv" => {
+                        <$expr_type>::BvUdiv(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvurem" => {
+                        <$expr_type>::BvUrem(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvshl" => {
+                        <$expr_type>::BvShl(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvlshr" => {
+                        <$expr_type>::BvLshr(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvult" => {
+                        <$expr_type>::BvUlt(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
                     _ => unreachable!(),
                 }
             }
-            "bvnot" => <$expr_type>::BvNot(Box::new($self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?)),
-            "bvneg" => <$expr_type>::BvNeg(Box::new($self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?)),
-            _ => panic!("Unknown operator: {}\nCurrent environment: {:#?}", $id, $env),
+            "bvnot" => <$expr_type>::BvNot(Box::new(
+                $self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?,
+            )),
+            "bvneg" => <$expr_type>::BvNeg(Box::new(
+                $self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?,
+            )),
+            _ => panic!(
+                "Unknown operator: {}\nCurrent environment: {:#?}",
+                $id, $env
+            ),
         }
     };
 }
@@ -440,7 +482,8 @@ impl Visitor for SyGuSVisitor {
                             expr = Expr::Var(id.clone(), sort.clone());
                             env.push((id, sort.clone()));
                         } else {
-                            expr = parse_expr!(id, Expr, self, &env, pairs.clone(), visit_term);                        }
+                            expr = parse_expr!(id, Expr, self, &env, pairs.clone(), visit_term);
+                        }
                     }
                     Rule::Term => {
                         expr = self.visit_term(&env, pair)?;
@@ -454,7 +497,7 @@ impl Visitor for SyGuSVisitor {
             Ok(expr)
         }
     }
-    
+
     fn visit_bf_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
         let mut env = env.clone();
         let length = pairs.clone().into_inner().count();
@@ -480,7 +523,8 @@ impl Visitor for SyGuSVisitor {
                             expr = GExpr::Var(id.clone(), sort.clone());
                             env.push((id, sort.clone()));
                         } else {
-                            expr = parse_expr!(id, GExpr, self, &env, pairs.clone(), visit_bf_term);                        }
+                            expr = parse_expr!(id, GExpr, self, &env, pairs.clone(), visit_bf_term);
+                        }
                     }
                     Rule::BfTerm => {
                         expr = self.visit_bf_term(&env, pair)?;

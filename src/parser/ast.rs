@@ -161,7 +161,7 @@ pub enum GExpr {
     BvUrem(Box<GExpr>, Box<GExpr>), // Unsigned remainder
     BvShl(Box<GExpr>, Box<GExpr>),  // Logical shift left
     BvLshr(Box<GExpr>, Box<GExpr>), // Logical shift right
-    BvNeg(Box<GExpr>),             // Negation
+    BvNeg(Box<GExpr>),              // Negation
     BvUlt(Box<GExpr>, Box<GExpr>),  // Unsigned less than
-    BvConst(i64, i32),            // param1: value, param2: bit width
+    BvConst(i64, i32),              // param1: value, param2: bit width
 }
