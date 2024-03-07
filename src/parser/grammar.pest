@@ -48,8 +48,8 @@ Index = ${ Numeral | Symbol }
 /// with. Possible values of attributes include symbols, as well as (lists of) sorts and terms. The above
 /// definition of attribute coincides with attributes in Section 3.4 of SMT-LIB version 2.6. All attributes
 /// standardized in this document are listed in Section 8
-Attribute      = { Keyword | Keyword ~ AttributeValue }
-AttributeValue = { Symbol | Sort | Term }
+// Attribute      = { Keyword | Keyword ~ AttributeValue }
+// AttributeValue = { Symbol | Sort | Term }
 
 /// 2.6 Sorts
 /// We work in a multi-sorted logic where terms are associated with sorts ⟨Sort⟩. Sorts are constructed via
@@ -88,19 +88,19 @@ Term       = {
     #term_ident      = Identifier
   | #term_literal    = Literal
   | #term_ident_list = "(" ~ Identifier ~ Term+ ~ ")"
-  | #term_attri      = "!" ~ "(" ~ Term ~ Attribute+ ~ ")"
-  | #term_exist      = "(" ~ "exists" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
-  | #term_forall     = "(" ~ "forall" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
-  | #term_let        = "(" ~ "let" ~ "(" ~ VarBinding+ ~ ")" ~ Term ~ ")"
+  // | #term_attri      = "!" ~ "(" ~ Term ~ Attribute+ ~ ")"
+  // | #term_exist      = "(" ~ "exists" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
+  // | #term_forall     = "(" ~ "forall" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
+  // | #term_let        = "(" ~ "let" ~ "(" ~ VarBinding+ ~ ")" ~ Term ~ ")"
 }
 BfTerm     = {
     #bfterm_ident      = Identifier
   | #bfterm_literal    = Literal
   | #bfterm_ident_list = "(" ~ Identifier ~ BfTerm+ ~ ")"
-  | #bfterm_attri      = "!" ~ "(" ~ BfTerm ~ Attribute+ ~ ")"
+  // | #bfterm_attri      = "!" ~ "(" ~ BfTerm ~ Attribute+ ~ ")"
 }
 SortedVar  = { "(" ~ Symbol ~ Sort ~ ")" }
-VarBinding = { "(" ~ Symbol ~ Term ~ ")" }
+// VarBinding = { "(" ~ Symbol ~ Term ~ ")" }
 
 /// 2.8 Features (skipped)
 

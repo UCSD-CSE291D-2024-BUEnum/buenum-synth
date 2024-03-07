@@ -45,6 +45,7 @@ pub trait Visitor {
     // fn visit_bfterm_attri(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
     // Sort
     fn visit_sort(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
+    // fn visit_var_binding(&mut self, pair: Pair<Rule>) -> Result<&Self::Env, Error<Rule>>;
 }
 
 pub struct SyGuSVisitor {
@@ -79,18 +80,42 @@ impl Visitor for SyGuSVisitor {
                 Rule::Cmd => {
                     self.visit_cmd(pair)?;
                 }
-                Rule::SmtCmd => {
-                    self.visit_smt_cmd(pair)?;
-                }
                 _ => unreachable!(),
             }
         }
         Ok(&self.sygus_prog)
     }
     fn visit_cmd(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::SmtCmd => {
+                    self.visit_smt_cmd(pair)?;
+                }
+                _ => {
+                    // for the other children of Cmd
+                    // check_synth, constraint, declare_var, synthe_fun
+                    // use the tag to determine which function to call
+                    match pair.as_node_tag() {
+                        Some("check_synth") => self.visit_check_synth(pair)?,
+                        Some("constraint") => self.visit_constraint(pair)?,
+                        Some("declare_var") => self.visit_declare_var(pair)?,
+                        Some("synthe_fun") => self.visit_synthe_fun(pair)?,
+                        _ => unreachable!(),
+                    };
+                }
+            }
+        }
         Ok(&self.sygus_prog)
     }
     fn visit_smt_cmd(&mut self, pair: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
+        for pair in pair.into_inner() {
+            match pair.as_node_tag() {
+                Some("define_fun") => self.visit_define_fun(pair)?,
+                Some("set_logic") => self.visit_set_logic(pair)?,
+                Some("set_option") => self.visit_set_option(pair)?,
+                _ => unreachable!(),
+            };
+        }
         Ok(&self.sygus_prog)
     }
     // Cmd
