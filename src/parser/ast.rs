@@ -7,7 +7,7 @@ pub type Symbol = String;
 pub type ProdName = String;
 pub type ProdSort = Sort;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SyGuSProg {
     pub set_logic: SetLogic,
     pub define_fun: HashMap<FuncName, FuncBody>,
@@ -17,28 +17,15 @@ pub struct SyGuSProg {
     pub set_option: HashMap<OptName, OptValue>
 }
 
-impl SyGuSProg {
-    pub fn new() -> SyGuSProg {
-        SyGuSProg {
-            set_logic: SetLogic::Unknown,
-            define_fun: HashMap::new(),
-            synth_func: HashMap::new(),
-            declare_var: HashMap::new(),
-            constraints: Vec::new(),
-            set_option: HashMap::new()
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum SetLogic {
     LIA,
     BV,
-
+    #[default]
     Unknown
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct FuncBody {
     pub name: FuncName,
     pub params: Vec<(Symbol, Sort)>, // retain parameter order
@@ -46,24 +33,26 @@ pub struct FuncBody {
     pub body: Expr
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SynthFun {
     pub name: FuncName,
     pub params: Vec<(Symbol, Sort)>, // retain parameter order
     pub ret_sort: Sort
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Sort {
     Bool,
     Int,
     BitVec(i32), // bit width
     Compound(String, Vec<Sort>),
     String,
+
+    #[default]
     None
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Expr {
     ConstBool(bool),
     ConstInt(i64),
@@ -95,46 +84,35 @@ pub enum Expr {
     BvLshr(Box<Expr>, Box<Expr>), // Logical shift right
     BvNeg(Box<Expr>),             // Negation
     BvUlt(Box<Expr>, Box<Expr>),  // Unsigned less than
-    BvConst(i64, i32)             // param1: value, param2: bit width
+    BvConst(i64, i32),            // param1: value, param2: bit width
+
+    #[default]
+    UnknownExpr
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct GrammarDef {
     pub non_terminals: Vec<Production>
 }
-impl GrammarDef {
-    pub fn new() -> GrammarDef {
-        GrammarDef {
-            non_terminals: Vec::new()
-        }
-    }
-}
-#[derive(Debug, Clone, PartialEq)]
+
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Production {
     pub lhs: ProdName,
     pub lhs_sort: ProdSort,
     pub rhs: Vec<GTerm>
 }
-impl Production {
-    pub fn new() -> Production {
-        Production {
-            lhs: "".to_string(),
-            lhs_sort: Sort::None,
-            rhs: Vec::new()
-        }
-    }
-}
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum GTerm {
     Constant(Sort),
     Variable(Sort),
     BfTerm(GExpr),
 
+    #[default]
     None
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum GExpr {
     ConstBool(bool),
     ConstInt(i64),
@@ -167,5 +145,8 @@ pub enum GExpr {
     BvLshr(Box<GExpr>, Box<GExpr>), // Logical shift right
     BvNeg(Box<GExpr>),              // Negation
     BvUlt(Box<GExpr>, Box<GExpr>),  // Unsigned less than
-    BvConst(i64, i32)               // param1: value, param2: bit width
+    BvConst(i64, i32),              // param1: value, param2: bit width
+
+    #[default]
+    UnknownGExpr
 }

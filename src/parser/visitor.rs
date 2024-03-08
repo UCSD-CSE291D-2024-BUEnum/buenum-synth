@@ -51,17 +51,11 @@ pub trait Visitor {
     fn visit_sort(&mut self, pairs: Pair<Rule>) -> Result<Sort, Error<Rule>>;
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SyGuSVisitor {
     pub sygus_prog: SyGuSProg
 }
 
-impl SyGuSVisitor {
-    pub fn new() -> SyGuSVisitor {
-        SyGuSVisitor {
-            sygus_prog: SyGuSProg::new()
-        }
-    }
-}
 macro_rules! parse_expr {
     ($id:ident, $expr_type:ty, $self:ident, $env:expr, $args:expr, $visit_method:ident) => {
         match $id.as_str() {
@@ -105,7 +99,7 @@ macro_rules! parse_expr {
                     }
                 } else {
                     if $args.is_empty() {
-                        <$expr_type>::Var($id.to_string(), Sort::None)
+                        <$expr_type>::Var($id.to_string(), Sort::default())
                     } else {
                         <$expr_type>::FuncApply($id.to_string(), $args)
                     }
@@ -135,11 +129,11 @@ macro_rules! parse_gexpr {
                 "bvshl" => <$expr_type>::BvShl(Box::new($args[0].clone()), Box::new($args[1].clone())),
                 "bvlshr" => <$expr_type>::BvLshr(Box::new($args[0].clone()), Box::new($args[1].clone())),
                 "bvult" => <$expr_type>::BvUlt(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                _ => <$expr_type>::Var("".to_string(), Sort::None)
+                _ => <$expr_type>::Var("".to_string(), Sort::default())
             },
             "bvnot" => <$expr_type>::BvNot(Box::new($args[0].clone())),
             "bvneg" => <$expr_type>::BvNeg(Box::new($args[0].clone())),
-            _ => <$expr_type>::Var("".to_string(), Sort::None)
+            _ => <$expr_type>::Var("".to_string(), Sort::default())
         }
     };
 }
@@ -252,7 +246,7 @@ impl Visitor for SyGuSVisitor {
     }
     fn visit_declare_var(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         let mut var_name = String::new();
-        let mut var_sort = Sort::None;
+        let mut var_sort = Sort::default();
         for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Symbol => {
@@ -264,7 +258,7 @@ impl Visitor for SyGuSVisitor {
                 _ => unreachable!("DeclareVarCmd should only have Symbol or Sort as children")
             }
         }
-        if (!var_name.is_empty()) && (var_sort != Sort::None) {
+        if (!var_name.is_empty()) && (var_sort != Sort::default()) {
             self.sygus_prog.declare_var.insert(var_name, var_sort);
         }
         Ok(&self.sygus_prog)
@@ -272,8 +266,8 @@ impl Visitor for SyGuSVisitor {
     fn visit_synth_fun(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         let mut sorted_vars = Vec::new();
         let mut func_name = String::new();
-        let mut ret_sort = Sort::None;
-        let mut grammar_def = GrammarDef::new(); // optional
+        let mut ret_sort = Sort::default();
+        let mut grammar_def = GrammarDef::default(); // optional
         for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Symbol => {
@@ -305,8 +299,8 @@ impl Visitor for SyGuSVisitor {
     fn visit_define_fun(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         let mut func_name = String::new();
         let mut sorted_vars = Vec::new();
-        let mut ret_sort = Sort::None;
-        let mut body = Expr::Var("".to_string(), Sort::None);
+        let mut ret_sort = Sort::default();
+        let mut body = Expr::Var("".to_string(), Sort::default());
         let pairs_str = format!("{:#?}", pairs.clone());
         for pair in pairs.clone().into_inner() {
             let pair_str = format!("{:#?}", pair.clone());
@@ -344,7 +338,7 @@ impl Visitor for SyGuSVisitor {
         match pair.as_str() {
             "LIA" => self.sygus_prog.set_logic = SetLogic::LIA,
             "BV" => self.sygus_prog.set_logic = SetLogic::BV,
-            _ => self.sygus_prog.set_logic = SetLogic::Unknown
+            _ => self.sygus_prog.set_logic = SetLogic::default()
         }
         Ok(&self.sygus_prog)
     }
@@ -372,7 +366,7 @@ impl Visitor for SyGuSVisitor {
     }
     // GrammarDef
     fn visit_grammar_def(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GrammarDef, Error<Rule>> {
-        let mut grammar_def = GrammarDef::new();
+        let mut grammar_def = GrammarDef::default();
         for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::GroupedRuleList => {
@@ -386,7 +380,7 @@ impl Visitor for SyGuSVisitor {
     }
     fn visit_grouped_rule_list(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Production, Error<Rule>> {
         let mut env = env.clone();
-        let mut production = Production::new();
+        let mut production = Production::default();
         let pairs_str = format!("{:#?}", pairs.clone());
         let length = pairs.clone().into_inner().count();
         for pair in pairs.clone().into_inner() {
@@ -409,7 +403,7 @@ impl Visitor for SyGuSVisitor {
         Ok(production)
     }
     fn visit_gterm(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GTerm, Error<Rule>> {
-        let mut gterm = GTerm::None;
+        let mut gterm = GTerm::default();
         let mut pairs_iter = pairs.clone().into_inner();
 
         if let Some(first_pair) = pairs_iter.next() {
@@ -434,7 +428,7 @@ impl Visitor for SyGuSVisitor {
     }
     // Term
     fn visit_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
-        let mut expr = Expr::Var("".to_string(), Sort::None);
+        let mut expr = Expr::Var("".to_string(), Sort::default());
         let mut pairs_iter = pairs.clone().into_inner();
 
         if let Some(first_pair) = pairs_iter.next() {
@@ -466,7 +460,7 @@ impl Visitor for SyGuSVisitor {
         Ok(expr)
     }
     fn visit_bfterm(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
-        let mut expr = GExpr::Var("".to_string(), Sort::None);
+        let mut expr = GExpr::Var("".to_string(), Sort::default());
         let mut pairs_iter = pairs.clone().into_inner();
 
         if let Some(first_pair) = pairs_iter.next() {
@@ -481,7 +475,7 @@ impl Visitor for SyGuSVisitor {
                             args.push(self.visit_bfterm(env, pair)?);
                         }
                         expr = parse_gexpr!(id, GExpr, self, env, args, visit_bfterm);
-                        if expr == GExpr::Var("".to_string(), Sort::None) {
+                        if expr == GExpr::Var("".to_string(), Sort::default()) {
                             expr = GExpr::GFuncApply(id, args);
                         }
                     }
@@ -497,7 +491,7 @@ impl Visitor for SyGuSVisitor {
     }
     fn visit_sorted_var(&mut self, pairs: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>> {
         let mut var_name = String::new();
-        let mut var_sort = Sort::None;
+        let mut var_sort = Sort::default();
         let pairs_str = format!("{:#?}", pairs.clone());
         for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
@@ -543,7 +537,7 @@ impl Visitor for SyGuSVisitor {
             match pair.as_rule() {
                 Rule::Identifier => {
                     let id = pair.as_str().to_string();
-                    exprs.push(Expr::Var(id, Sort::None));
+                    exprs.push(Expr::Var(id, Sort::default()));
                 }
                 Rule::Literal => {
                     let id = pair.as_str().to_string();
@@ -613,7 +607,7 @@ impl Visitor for SyGuSVisitor {
             match pair.as_rule() {
                 Rule::Identifier => {
                     let id = pair.as_str().to_string();
-                    exprs.push(GExpr::Var(id, Sort::None));
+                    exprs.push(GExpr::Var(id, Sort::default()));
                 }
                 Rule::Literal => {
                     let id = pair.as_str().to_string();
@@ -674,7 +668,7 @@ impl Visitor for SyGuSVisitor {
                 _ => unreachable!("Sort should only have Identifier as first children"),
             }
         } else {
-            Ok(Sort::None)
+            Ok(Sort::default())
         }
     }
 }

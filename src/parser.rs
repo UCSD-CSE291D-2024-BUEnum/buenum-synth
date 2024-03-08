@@ -15,7 +15,7 @@ pub struct SyGuSParser;
 pub fn parse(input: &str) -> Result<ast::SyGuSProg, Error<Rule>> {
     let mut pairs = SyGuSParser::parse(Rule::main, input)?;
     let pair = pairs.next().unwrap();
-    let mut sygus_visitor = SyGuSVisitor::new();
+    let mut sygus_visitor = SyGuSVisitor::default();
     let prog = sygus_visitor.visit_main(pair)?;
-    Ok(prog.clone())
+    Ok(sygus_visitor.sygus_prog)
 }
