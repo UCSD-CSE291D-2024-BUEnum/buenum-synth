@@ -40,7 +40,7 @@ impl Solver for BaselineSolver {
         unimplemented!()
     }
 
-    fn verify(&self, p: &Self::Prog, expr: &Self::Expr) -> Result<(), Self::CounterExample> {
+    fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Result<(), Self::CounterExample> {
         // TODO: Verify the expression against the constraints in the SyGuS program
         unimplemented!()
     }

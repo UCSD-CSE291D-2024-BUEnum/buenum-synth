@@ -19,9 +19,13 @@ pub trait Solver {
         g: &'a Self::Grammar,
         c: &'a [Self::CounterExample]
     ) -> Box<dyn Iterator<Item = Self::Expr> + 'a>;
+
     fn extract_grammar(&self, p: &Self::Prog, func_name: &str) -> Self::Grammar;
+
     fn extract_constraint(&self, p: &Self::Prog) -> Self::Constraint;
-    fn verify(&self, p: &Self::Prog, expr: &Self::Expr) -> Result<(), Self::CounterExample>;
+
+    fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Result<(), Self::CounterExample>;
+
     fn synthesize(&self, p: &Self::Prog, func_name: &str) -> Option<Self::Expr> {
         let counterexamples: RefCell<Vec<Self::CounterExample>> = RefCell::new(Vec::new()); // we need to use RefCell because we cannot decide the reference lifetime statically
         let constraint = self.extract_constraint(p);
@@ -32,7 +36,7 @@ pub trait Solver {
             let mut candidates = self.enumerate(&g, &pts);
 
             while let Some(expr) = candidates.next() {
-                match self.verify(p, &expr) {
+                match self.verify(p, func_name, &expr) {
                     Ok(()) => return Some(expr),
                     Err(cex) => counterexamples.borrow_mut().push(cex)
                 }
