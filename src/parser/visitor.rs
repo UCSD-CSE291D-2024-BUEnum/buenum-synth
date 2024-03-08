@@ -98,10 +98,17 @@ macro_rules! parse_expr {
             },
             "bvnot" => <$expr_type>::BvNot(Box::new($args[0].clone())),
             "bvneg" => <$expr_type>::BvNeg(Box::new($args[0].clone())),
-            _ => panic!(
-                "Unknown operator: {}\nCurrent environment: {:#?}\nCurrent sygus_prog: {:#?}",
-                $id, $env, $self.sygus_prog
-            )
+            // _ => panic!(
+            //     "Unknown operator: {}\nCurrent environment: {:#?}\nCurrent sygus_prog: {:#?}",
+            //     $id, $env, $self.sygus_prog
+            // )
+            _ => {
+                if let Some((_, sort)) = $env.iter().find(|(k, _)| k.clone() == $id) {
+                    <$expr_type>::Var($id.to_string(), sort.clone())
+                } else {
+                    <$expr_type>::FuncApply($id.to_string(), $args)
+                }
+            }
         }
     };
 }
@@ -422,20 +429,16 @@ impl Visitor for SyGuSVisitor {
     fn visit_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
         let mut expr = Expr::Var("".to_string(), Sort::None);
         let mut pairs_iter = pairs.clone().into_inner();
-
+    
         if let Some(first_pair) = pairs_iter.next() {
             match first_pair.as_rule() {
                 Rule::Identifier => {
                     let id = first_pair.as_str().to_string();
-                    if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
-                        expr = Expr::Var(id.clone(), sort.clone());
-                    } else {
-                        let mut args = Vec::new();
-                        for pair in pairs_iter {
-                            args.push(self.visit_term(env, pair)?);
-                        }
-                        expr = parse_expr!(id, Expr, self, env, args, visit_term);
+                    let mut args = Vec::new();
+                    for pair in pairs_iter {
+                        args.push(self.visit_term(env, pair)?);
                     }
+                    expr = parse_expr!(id, Expr, self, env, args, visit_term);
                 }
                 Rule::Literal => {
                     expr = self.visit_term_literal(env, first_pair)?;
@@ -443,7 +446,7 @@ impl Visitor for SyGuSVisitor {
                 _ => unreachable!("Term should only have Identifier or Literal as the first child")
             }
         }
-
+    
         Ok(expr)
     }
     fn visit_bfterm(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
