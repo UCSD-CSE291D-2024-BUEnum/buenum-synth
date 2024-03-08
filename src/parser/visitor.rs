@@ -358,8 +358,7 @@ impl Visitor for SyGuSVisitor {
                     opt_name = pair.as_str().to_string();
                 }
                 Rule::Symbol => {
-                    opt_value = pair.as_str().to_string();
-                    opts.push((opt_name.clone(), opt_value.clone()));
+                    opt_name = pair.as_str().to_string();
                 }
                 Rule::Literal => {
                     opt_value = pair.as_str().to_string();
@@ -648,26 +647,35 @@ impl Visitor for SyGuSVisitor {
     }
     // Sort
     fn visit_sort(&mut self, pairs: Pair<Rule>) -> Result<Sort, Error<Rule>> {
-        let mut sort = Sort::None;
         let pairs_str = format!("{:#?}", pairs.clone());
-        for pair in pairs.clone().into_inner() {
-            match pair.as_rule() {
-                Rule::Identifier => match pair.as_str() {
-                    "Bool" => sort = Sort::Bool,
-                    "Int" => sort = Sort::Int,
-                    "BitVec" => {
-                        let bit_width = pair.as_str().parse::<i32>().unwrap();
-                        sort = Sort::BitVec(bit_width);
+        let mut pairs_iter = pairs.clone().into_inner();
+        
+        if let Some(first_pair) = pairs_iter.next() {
+            let first_pair_str = format!("{:#?}", first_pair.clone());
+            match first_pair.as_rule() {
+                Rule::Identifier => {
+                    let id = first_pair.as_str().to_string();
+                    match id.as_str() {
+                        "Bool" => Ok(Sort::Bool),
+                        "Int" => Ok(Sort::Int),
+                        "BitVec" => {
+                            let bit_width = pairs_iter.next().unwrap().as_str().parse::<i32>().unwrap();
+                            Ok(Sort::BitVec(bit_width))
+                        }
+                        _ => {
+                            let mut sub_sorts = Vec::new();
+                            for sub_pair in pairs_iter {
+                                sub_sorts.push(self.visit_sort(sub_pair)?);
+                            }
+                            Ok(Sort::Compound(id, sub_sorts))
+                        }
                     }
-                    _ => unreachable!("Unknown sort")
-                },
-                Rule::Sort => {
-                    sort = self.visit_sort(pair)?;
                 }
-                _ => unreachable!("Sort should only have Identifier or Sort as children")
+                _ => unreachable!("Sort should only have Identifier as first children"),
             }
+        } else {
+            Ok(Sort::None)
         }
-        Ok(sort)
     }
 }
 
@@ -690,6 +698,7 @@ mod tests {
                 }
             };
             dbg!(format!("{:?}", res));
+            // panic!("{:#?}", res);
         };
     }
     #[test]

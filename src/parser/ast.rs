@@ -58,8 +58,8 @@ pub enum Sort {
     Bool,
     Int,
     BitVec(i32), // bit width
+    Compound(String, Vec<Sort>),
     String,
-
     None
 }
 
