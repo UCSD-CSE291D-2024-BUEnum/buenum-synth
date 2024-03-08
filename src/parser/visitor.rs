@@ -154,6 +154,84 @@ macro_rules! parse_expr {
     };
 }
 
+macro_rules! parse_gexpr {
+    ($id:ident, $expr_type:ty, $self:ident, $env:expr, $pairs:expr, $visit_method:ident) => {
+        match $id.as_str() {
+            "not" => <$expr_type>::Not(Box::new(
+                $self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?,
+            )),
+            "=" | "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor" | "bvadd" | "bvmul"
+            | "bvsub" | "bvudiv" | "bvurem" | "bvshl" | "bvlshr" | "bvult" => {
+                let mut exprs = Vec::new();
+                for pair in $pairs.into_inner() {
+                    let expr = $self.$visit_method($env, pair)?;
+                    exprs.push(expr);
+                }
+                match $id.as_str() {
+                    "=" => {
+                        <$expr_type>::Equal(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "and" => {
+                        <$expr_type>::And(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "or" => {
+                        <$expr_type>::Or(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "xor" => {
+                        <$expr_type>::Xor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "iff" => {
+                        <$expr_type>::Iff(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvand" => {
+                        <$expr_type>::BvAnd(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvor" => {
+                        <$expr_type>::BvOr(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvxor" => {
+                        <$expr_type>::BvXor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvadd" => {
+                        <$expr_type>::BvAdd(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvmul" => {
+                        <$expr_type>::BvMul(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvsub" => {
+                        <$expr_type>::BvSub(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvudiv" => {
+                        <$expr_type>::BvUdiv(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvurem" => {
+                        <$expr_type>::BvUrem(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvshl" => {
+                        <$expr_type>::BvShl(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvlshr" => {
+                        <$expr_type>::BvLshr(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    "bvult" => {
+                        <$expr_type>::BvUlt(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            "bvnot" => <$expr_type>::BvNot(Box::new(
+                $self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?,
+            )),
+            "bvneg" => <$expr_type>::BvNeg(Box::new(
+                $self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?,
+            )),
+            _ => panic!(
+                "Unknown operator: {}\nCurrent environment: {:#?}",
+                $id, $env
+            ),
+        }
+    };
+}
 impl Visitor for SyGuSVisitor {
     type Prog = SyGuSProg;
     type Env = Vec<(String, Sort)>;
@@ -407,17 +485,22 @@ impl Visitor for SyGuSVisitor {
         env: &Self::Env,
         pairs: Pair<Rule>,
     ) -> Result<Production, Error<Rule>> {
+        let mut env = env.clone();
         let mut production = Production::new();
+        let pairs_str = format!("{:#?}", pairs.clone());
+        let length = pairs.clone().into_inner().count();
         for pair in pairs.clone().into_inner() {
+            let pair_str = format!("{:#?}", pair.clone());
             match pair.as_rule() {
                 Rule::Symbol => {
                     production.lhs = pair.as_str().to_string();
                 }
                 Rule::Sort => {
                     production.lhs_sort = self.visit_sort(pair)?;
+                    env.push((production.lhs.clone(), production.lhs_sort.clone()));
                 }
                 Rule::GTerm => {
-                    let gterm = self.visit_gterm(env, pair)?;
+                    let gterm = self.visit_gterm(&env, pair)?;
                     production.rhs.push(gterm);
                 }
                 _ => continue,
@@ -475,33 +558,44 @@ impl Visitor for SyGuSVisitor {
         Ok(expr)
     }
     fn visit_bf_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
-        let mut expr = GExpr::Var("".to_string(), Sort::None);
-        let mut pairs_iter = pairs.clone().into_inner();
-
-        if let Some(first_pair) = pairs_iter.next() {
-            match first_pair.as_rule() {
-                Rule::Identifier => {
-                    let id = first_pair.as_str().to_string();
-                    if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
-                        expr = GExpr::Var(id.clone(), sort.clone());
-                    } else {
-                        let mut args = Vec::new();
-                        for pair in pairs_iter {
-                            args.push(self.visit_bf_term(env, pair)?);
+        let mut env = env.clone();
+        let length = pairs.clone().into_inner().count();
+        if length == 1 {
+            let pair = pairs.clone().into_inner().next().unwrap();
+            match pair.as_rule() {
+                Rule::Identifier => self.visit_bfterm_ident(&env, pair),
+                Rule::Literal => self.visit_bfterm_literal(&env, pair),
+                _ => unreachable!(
+                    "BfTerm should only have Identifier or Literal as children when length is 1"
+                ),
+            }
+        } else {
+            let mut expr = GExpr::Var("".to_string(), Sort::None);
+            let mut id = String::new();
+            for pair in pairs.clone().into_inner() {
+                match pair.as_rule() {
+                    Rule::Identifier => {
+                        id = pair.as_str().to_string();
+                        // try to find id in env
+                        if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
+                            // if found, create a variable expression
+                            expr = GExpr::Var(id.clone(), sort.clone());
+                            env.push((id, sort.clone()));
+                        } else {
+                            expr = parse_gexpr!(id, GExpr, self, &env, pairs.clone(), visit_bf_term);
                         }
-                        expr = parse_expr!(id, GExpr, self, env, args, visit_bf_term);
                     }
-                }
-                Rule::Literal => {
-                    expr = self.visit_bfterm_literal(env, first_pair)?;
-                }
-                _ => {
-                    unreachable!("BfTerm should only have Identifier or Literal as the first child")
+                    Rule::BfTerm => {
+                        expr = self.visit_bf_term(&env, pair)?;
+                        // TODO: need to store the id, sort, and expr
+                    }
+                    _ => unreachable!(
+                        "The third branch should only have Identifier or BfTerm as children"
+                    ),
                 }
             }
+            Ok(expr)
         }
-
-        Ok(expr)
     }
     fn visit_sorted_var(&mut self, pairs: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>> {
         let mut var_name = String::new();
