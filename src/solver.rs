@@ -2,14 +2,14 @@ pub mod baseline_solver;
 pub mod egg_solver;
 
 trait Solver {
-    type Input;
-    type Output;
+    type SolverInput; // input is a parsed program (SyGuSProg)
+    type SolverOutput; // returns a actual program (Expr)
 
-    fn solve(input: Self::Input) -> Self::Output;
+    fn parse(input: &str) -> Self::SolverInput;
 
-    fn parse(input: &str) -> Self::Input;
+    fn solve(input: Self::SolverInput) -> Self::SolverOutput;
 
-    fn print(output: Self::Output) -> String;
+    fn print(output: Self::SolverOutput) -> String;
 
     // fn solve_constraint(input: Self::Input) -> Result<_>;
 
