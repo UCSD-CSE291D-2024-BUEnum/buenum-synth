@@ -20,7 +20,3 @@ pub fn parse(input: &str) -> Result<ast::SyGuSProg, Error<Rule>> {
     let prog = sygus_visitor.visit_main(pair)?;
     Ok(sygus_visitor.sygus_prog)
 }
-
-// TODO:
-// add `eval` function here for evaluating expressions
-// mostly for constraint solving
