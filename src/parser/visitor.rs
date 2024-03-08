@@ -104,9 +104,19 @@ macro_rules! parse_expr {
             // )
             _ => {
                 if let Some((_, sort)) = $env.iter().find(|(k, _)| k.clone() == $id) {
-                    <$expr_type>::Var($id.to_string(), sort.clone())
+                    // if id also in the define_fun or synth_fun name, then it is a function application
+                    if $self.sygus_prog.define_fun.contains_key(&$id) || $self.sygus_prog.synth_func.contains_key(&$id)
+                    {
+                        <$expr_type>::FuncApply($id.to_string(), $args)
+                    } else {
+                        <$expr_type>::Var($id.to_string(), sort.clone())
+                    }
                 } else {
-                    <$expr_type>::FuncApply($id.to_string(), $args)
+                    if $args.is_empty() {
+                        <$expr_type>::Var($id.to_string(), Sort::None)
+                    } else {
+                        <$expr_type>::FuncApply($id.to_string(), $args)
+                    }
                 }
             }
         }
@@ -116,8 +126,8 @@ macro_rules! parse_gexpr {
     ($id:ident, $expr_type:ty, $self:ident, $env:expr, $args:expr, $visit_method:ident) => {
         match $id.as_str() {
             "not" => <$expr_type>::Not(Box::new($args[0].clone())),
-            "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor" | "bvadd" | "bvmul" | "bvsub"
-            | "bvudiv" | "bvurem" | "bvshl" | "bvlshr" | "bvult" => match $id.as_str() {
+            "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor" | "bvadd" | "bvmul" | "bvsub" | "bvudiv"
+            | "bvurem" | "bvshl" | "bvlshr" | "bvult" => match $id.as_str() {
                 "and" => <$expr_type>::And(Box::new($args[0].clone()), Box::new($args[1].clone())),
                 "or" => <$expr_type>::Or(Box::new($args[0].clone()), Box::new($args[1].clone())),
                 "xor" => <$expr_type>::Xor(Box::new($args[0].clone()), Box::new($args[1].clone())),
@@ -133,11 +143,11 @@ macro_rules! parse_gexpr {
                 "bvshl" => <$expr_type>::BvShl(Box::new($args[0].clone()), Box::new($args[1].clone())),
                 "bvlshr" => <$expr_type>::BvLshr(Box::new($args[0].clone()), Box::new($args[1].clone())),
                 "bvult" => <$expr_type>::BvUlt(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                _ => <$expr_type>::Var("".to_string(), Sort::None),
+                _ => <$expr_type>::Var("".to_string(), Sort::None)
             },
             "bvnot" => <$expr_type>::BvNot(Box::new($args[0].clone())),
             "bvneg" => <$expr_type>::BvNeg(Box::new($args[0].clone())),
-            _ => <$expr_type>::Var("".to_string(), Sort::None),
+            _ => <$expr_type>::Var("".to_string(), Sort::None)
         }
     };
 }
@@ -429,13 +439,22 @@ impl Visitor for SyGuSVisitor {
     fn visit_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
         let mut expr = Expr::Var("".to_string(), Sort::None);
         let mut pairs_iter = pairs.clone().into_inner();
-    
+
         if let Some(first_pair) = pairs_iter.next() {
             match first_pair.as_rule() {
                 Rule::Identifier => {
                     let id = first_pair.as_str().to_string();
                     let mut args = Vec::new();
+                    if id == "parity" {
+                        let pairs_iter_str = format!("{:#?}", pairs_iter.clone());
+                        let first_pair_str = format!("{:#?}", first_pair.clone());
+                        let env_str = format!("{:#?}", env);
+                    }
+                    let pairs_iter_str = format!("{:#?}", pairs_iter.clone());
+                    let first_pair_str = format!("{:#?}", first_pair.clone());
+                    let env_str = format!("{:#?}", env);
                     for pair in pairs_iter {
+                        let pair_str = format!("{:#?}", pair.clone());
                         args.push(self.visit_term(env, pair)?);
                     }
                     expr = parse_expr!(id, Expr, self, env, args, visit_term);
@@ -446,13 +465,13 @@ impl Visitor for SyGuSVisitor {
                 _ => unreachable!("Term should only have Identifier or Literal as the first child")
             }
         }
-    
+
         Ok(expr)
     }
     fn visit_bfterm(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
         let mut expr = GExpr::Var("".to_string(), Sort::None);
         let mut pairs_iter = pairs.clone().into_inner();
-    
+
         if let Some(first_pair) = pairs_iter.next() {
             match first_pair.as_rule() {
                 Rule::Identifier => {
@@ -476,7 +495,7 @@ impl Visitor for SyGuSVisitor {
                 _ => unreachable!("BfTerm should only have Identifier or Literal as children")
             }
         }
-    
+
         Ok(expr)
     }
     fn visit_sorted_var(&mut self, pairs: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>> {
