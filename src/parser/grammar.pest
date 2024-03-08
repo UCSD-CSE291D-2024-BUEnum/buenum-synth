@@ -87,8 +87,7 @@ Sort = { Identifier | "(" ~ Identifier ~ Sort+ ~ ")" }
 Term      = {
     Identifier
   | Literal
-  | "(" ~ Identifier ~ Term+ ~ ")"
-  // | #term_attri      = "!" ~ "(" ~ Term ~ Attribute+ ~ ")"
+  | "(" ~ Identifier ~ Term+ ~ ")" // | #term_attri      = "!" ~ "(" ~ Term ~ Attribute+ ~ ")"
   // | #term_exist      = "(" ~ "exists" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
   // | #term_forall     = "(" ~ "forall" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
   // | #term_let        = "(" ~ "let" ~ "(" ~ VarBinding+ ~ ")" ~ Term ~ ")"
@@ -96,8 +95,7 @@ Term      = {
 BfTerm    = {
     Identifier
   | Literal
-  | "(" ~ Identifier ~ BfTerm+ ~ ")"
-  // | #bfterm_attri      = "!" ~ "(" ~ BfTerm ~ Attribute+ ~ ")"
+  | "(" ~ Identifier ~ BfTerm+ ~ ")" // | #bfterm_attri      = "!" ~ "(" ~ BfTerm ~ Attribute+ ~ ")"
 }
 SortedVar = { "(" ~ Symbol ~ Sort ~ ")" }
 // VarBinding = { "(" ~ Symbol ~ Term ~ ")" }
@@ -165,7 +163,10 @@ SmtCmd        = {
 
 DefineFunCmd = { "(" ~ "define-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ Term ~ ")" }
 SetLogicCmd  = { "(" ~ "set-logic" ~ Symbol ~ ")" }
-SetOptionCmd = { "(" ~ "set-option" ~ "s"? ~ Keyword ~ Literal ~ ")" }
+SetOptionCmd = {
+    "(" ~ "set-option" ~ Keyword ~ Literal ~ ")"
+  | "(" ~ "set-options" ~ "(" ~ ("(" ~ Symbol ~ Literal ~ ")")+ ~ ")" ~ ")"
+}
 
 GrammarDef      = { ("(" ~ SortedVar+ ~ ")")? ~ "(" ~ GroupedRuleList+ ~ ")" }
 GroupedRuleList = { "(" ~ Symbol ~ Sort ~ "(" ~ GTerm+ ~ ")" ~ ")" }

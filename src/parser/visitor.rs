@@ -351,18 +351,24 @@ impl Visitor for SyGuSVisitor {
     fn visit_set_option(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
         let mut opt_name = String::new();
         let mut opt_value = String::new();
+        let mut opts = Vec::new();
         for pair in pairs.clone().into_inner() {
             match pair.as_rule() {
                 Rule::Keyword => {
                     opt_name = pair.as_str().to_string();
                 }
+                Rule::Symbol => {
+                    opt_value = pair.as_str().to_string();
+                    opts.push((opt_name.clone(), opt_value.clone()));
+                }
                 Rule::Literal => {
                     opt_value = pair.as_str().to_string();
+                    opts.push((opt_name.clone(), opt_value.clone()));
                 }
                 _ => unreachable!("SetOptionCmd should only have Keyword or Literal as children")
             }
         }
-        self.sygus_prog.set_option.insert(opt_name, opt_value);
+        self.sygus_prog.set_option.extend(opts);
         Ok(&self.sygus_prog)
     }
     // GrammarDef
@@ -528,7 +534,7 @@ impl Visitor for SyGuSVisitor {
                 let val = u64::from_str_radix(&id[2..], 16).unwrap();
                 Ok(Expr::ConstBitVec(val))
             }
-            Rule::StringConst => Ok(Expr::Var(id, Sort::None)), // TODO
+            Rule::StringConst => Ok(Expr::ConstString(id)),
             _ => unreachable!()
         }
     }
@@ -556,7 +562,7 @@ impl Visitor for SyGuSVisitor {
                             exprs.push(Expr::ConstBitVec(val));
                         }
                         Rule::StringConst => {
-                            exprs.push(Expr::Var(id, Sort::None));
+                            exprs.push(Expr::ConstString(id));
                         }
                         _ => unimplemented!(
                             "Current Literal should only have Numeral, BoolConst, HexConst, or StringConst as children"
@@ -597,7 +603,7 @@ impl Visitor for SyGuSVisitor {
                 let val = u64::from_str_radix(&id[2..], 16).unwrap();
                 Ok(GExpr::ConstBitVec(val))
             }
-            Rule::StringConst => Ok(GExpr::Var(id, Sort::String)),
+            Rule::StringConst => Ok(GExpr::ConstString(id)),
             _ => unreachable!()
         }
     }
@@ -626,7 +632,7 @@ impl Visitor for SyGuSVisitor {
                             exprs.push(GExpr::ConstBitVec(val));
                         }
                         Rule::StringConst => {
-                            exprs.push(GExpr::Var(id, Sort::None));
+                            exprs.push(GExpr::ConstString(id));
                         }
                         _ => continue
                     }
