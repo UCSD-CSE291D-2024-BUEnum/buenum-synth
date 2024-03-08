@@ -200,8 +200,7 @@ impl Visitor for SyGuSVisitor {
     }
     // Cmd
     fn visit_check_synth(&mut self, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
-        // TODO: when running into this, we should call the solver with current collected SyGuSProg information
-        // Implement in the last step
+        self.sygus_prog.check_synth = true;
         Ok(&self.sygus_prog)
     }
     fn visit_constraint(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<&SyGuSProg, Error<Rule>> {
@@ -482,7 +481,7 @@ impl Visitor for SyGuSVisitor {
     // Term productions
     fn visit_term_ident(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
         let id = pairs.as_str().to_string();
-        let sort = env.iter().find(|(k, _)| k == &id).unwrap().1.clone(); // TODO: crash on unwrap the operator
+        let sort = env.iter().find(|(k, _)| k == &id).unwrap().1.clone();
         Ok(Expr::Var(id, sort))
     }
     fn visit_term_literal(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
@@ -666,6 +665,7 @@ mod tests {
             };
             dbg!(format!("{:?}", res));
             // panic!("{:#?}", res);
+            // panic!("{:?}", res);
         };
     }
     #[test]

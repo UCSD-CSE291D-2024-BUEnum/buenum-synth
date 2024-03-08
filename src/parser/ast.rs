@@ -14,7 +14,8 @@ pub struct SyGuSProg {
     pub synth_func: HashMap<FuncName, (SynthFun, GrammarDef)>,
     pub declare_var: HashMap<Symbol, Sort>,
     pub constraints: Vec<Expr>,
-    pub set_option: HashMap<OptName, OptValue>
+    pub set_option: HashMap<OptName, OptValue>,
+    pub check_synth: bool
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]

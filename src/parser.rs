@@ -1,5 +1,6 @@
 pub mod ast;
-mod visitor;
+pub mod eval;
+pub mod visitor;
 
 use pest::error::Error;
 use pest::Parser;
