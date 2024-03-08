@@ -87,7 +87,8 @@ Sort = { Identifier | "(" ~ Identifier ~ Sort+ ~ ")" }
 Term      = {
     Identifier
   | Literal
-  | "(" ~ Identifier ~ Term+ ~ ")" // | #term_attri      = "!" ~ "(" ~ Term ~ Attribute+ ~ ")"
+  | "(" ~ Identifier ~ Term+ ~ ")"
+  // | #term_attri      = "!" ~ "(" ~ Term ~ Attribute+ ~ ")"
   // | #term_exist      = "(" ~ "exists" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
   // | #term_forall     = "(" ~ "forall" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
   // | #term_let        = "(" ~ "let" ~ "(" ~ VarBinding+ ~ ")" ~ Term ~ ")"
@@ -95,7 +96,8 @@ Term      = {
 BfTerm    = {
     Identifier
   | Literal
-  | "(" ~ Identifier ~ BfTerm+ ~ ")" // | #bfterm_attri      = "!" ~ "(" ~ BfTerm ~ Attribute+ ~ ")"
+  | "(" ~ Identifier ~ BfTerm+ ~ ")"
+  // | #bfterm_attri      = "!" ~ "(" ~ BfTerm ~ Attribute+ ~ ")"
 }
 SortedVar = { "(" ~ Symbol ~ Sort ~ ")" }
 // VarBinding = { "(" ~ Symbol ~ Term ~ ")" }

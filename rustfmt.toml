@@ -1,0 +1,13 @@
+max_width = 120
+fn_single_line = false
+where_single_line = false
+imports_indent = "Block"
+imports_layout = "Vertical"
+group_imports = "StdExternalCrate"
+array_width = 60
+control_brace_style = "AlwaysSameLine"
+trailing_comma = "Never"
+trailing_semicolon = true
+match_arm_blocks = true
+error_on_line_overflow = false
+error_on_unformatted = true

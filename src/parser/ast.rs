@@ -1,4 +1,7 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::HashMap,
+    str::FromStr
+};
 
 pub type FuncName = String;
 pub type OptName = String;
@@ -11,10 +14,10 @@ pub type ProdSort = Sort;
 pub struct SyGuSProg {
     pub set_logic: SetLogic,
     pub define_fun: HashMap<FuncName, FuncBody>,
+    pub synth_func: HashMap<FuncName, (SynthFun, GrammarDef)>,
     pub declare_var: HashMap<Symbol, Sort>,
-    pub synthe_func: HashMap<FuncName, (SynthFun, GrammarDef)>,
     pub constraints: Vec<Expr>,
-    pub set_option: HashMap<OptName, OptValue>,
+    pub set_option: HashMap<OptName, OptValue>
 }
 
 impl SyGuSProg {
@@ -22,10 +25,10 @@ impl SyGuSProg {
         SyGuSProg {
             set_logic: SetLogic::Unknown,
             define_fun: HashMap::new(),
+            synth_func: HashMap::new(),
             declare_var: HashMap::new(),
-            synthe_func: HashMap::new(),
             constraints: Vec::new(),
-            set_option: HashMap::new(),
+            set_option: HashMap::new()
         }
     }
 }
@@ -35,22 +38,22 @@ pub enum SetLogic {
     LIA,
     BV,
 
-    Unknown,
+    Unknown
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncBody {
     pub name: FuncName,
     pub params: Vec<(Symbol, Sort)>, // retain parameter order
-    pub return_type: Sort,
-    pub body: Expr,
+    pub ret_sort: Sort,
+    pub body: Expr
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SynthFun {
     pub name: FuncName,
     pub params: Vec<(Symbol, Sort)>, // retain parameter order
-    pub return_type: Sort,
+    pub ret_sort: Sort
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -60,7 +63,7 @@ pub enum Sort {
     BitVec(i32), // bit width
     String,
 
-    None,
+    None
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,17 +97,17 @@ pub enum Expr {
     BvLshr(Box<Expr>, Box<Expr>), // Logical shift right
     BvNeg(Box<Expr>),             // Negation
     BvUlt(Box<Expr>, Box<Expr>),  // Unsigned less than
-    BvConst(i64, i32),            // param1: value, param2: bit width
+    BvConst(i64, i32)             // param1: value, param2: bit width
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GrammarDef {
-    pub non_terminals: Vec<Production>,
+    pub non_terminals: Vec<Production>
 }
 impl GrammarDef {
     pub fn new() -> GrammarDef {
         GrammarDef {
-            non_terminals: Vec::new(),
+            non_terminals: Vec::new()
         }
     }
 }
@@ -112,14 +115,14 @@ impl GrammarDef {
 pub struct Production {
     pub lhs: ProdName,
     pub lhs_sort: ProdSort,
-    pub rhs: Vec<GTerm>,
+    pub rhs: Vec<GTerm>
 }
 impl Production {
     pub fn new() -> Production {
         Production {
             lhs: "".to_string(),
             lhs_sort: Sort::None,
-            rhs: Vec::new(),
+            rhs: Vec::new()
         }
     }
 }
@@ -130,7 +133,7 @@ pub enum GTerm {
     Variable(Sort),
     BfTerm(GExpr),
 
-    None,
+    None
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -164,5 +167,5 @@ pub enum GExpr {
     BvLshr(Box<GExpr>, Box<GExpr>), // Logical shift right
     BvNeg(Box<GExpr>),              // Negation
     BvUlt(Box<GExpr>, Box<GExpr>),  // Unsigned less than
-    BvConst(i64, i32),              // param1: value, param2: bit width
+    BvConst(i64, i32)               // param1: value, param2: bit width
 }
