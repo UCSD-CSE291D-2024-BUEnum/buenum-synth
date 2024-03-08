@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    str::FromStr
-};
+use std::collections::HashMap;
 
 pub type FuncName = String;
 pub type OptName = String;

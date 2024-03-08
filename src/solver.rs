@@ -1,7 +1,6 @@
 pub mod baseline_solver;
 pub mod egg_solver;
 
-use anyhow::Result;
 trait Solver {
     type Input;
     type Output;
