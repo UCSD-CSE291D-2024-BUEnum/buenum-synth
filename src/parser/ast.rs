@@ -142,6 +142,7 @@ pub enum GExpr {
     ConstInt(i64),
     ConstBitVec(u64),
     Var(Symbol, Sort),
+    GFuncApply(ProdName, Vec<GExpr>),
     FuncApply(FuncName, Vec<GExpr>),
     Let(Vec<(Symbol, GExpr)>, Box<GExpr>),
 
