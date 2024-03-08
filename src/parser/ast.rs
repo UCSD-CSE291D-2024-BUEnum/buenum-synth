@@ -58,6 +58,7 @@ pub enum Sort {
     Bool,
     Int,
     BitVec(i32), // bit width
+    String,
 
     None,
 }
