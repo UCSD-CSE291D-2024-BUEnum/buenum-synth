@@ -97,81 +97,58 @@ impl SyGuSVisitor {
     }
 }
 macro_rules! parse_expr {
-    ($id:ident, $expr_type:ty, $self:ident, $env:expr, $pairs:expr, $visit_method:ident) => {
+    ($id:ident, $expr_type:ty, $self:ident, $env:expr, $args:expr, $visit_method:ident) => {
         match $id.as_str() {
             // Unary Operators
-            "not" => <$expr_type>::Not(Box::new(
-                $self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?,
-            )),
+            "not" => <$expr_type>::Not(Box::new($args[0].clone())),
             // Binary Operators
             "=" | "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor" | "bvadd" | "bvmul"
-            | "bvsub" | "bvudiv" | "bvurem" | "bvshl" | "bvlshr" | "bvult" => {
-                let mut exprs = Vec::new();
-                for pair in $pairs.clone().into_inner() {
-                    let expr = $self.$visit_method($env, pair)?;
-                    exprs.push(expr);
+            | "bvsub" | "bvudiv" | "bvurem" | "bvshl" | "bvlshr" | "bvult" => match $id.as_str() {
+                "=" => <$expr_type>::Equal(Box::new($args[0].clone()), Box::new($args[1].clone())),
+                "and" => <$expr_type>::And(Box::new($args[0].clone()), Box::new($args[1].clone())),
+                "or" => <$expr_type>::Or(Box::new($args[0].clone()), Box::new($args[1].clone())),
+                "xor" => <$expr_type>::Xor(Box::new($args[0].clone()), Box::new($args[1].clone())),
+                "iff" => <$expr_type>::Iff(Box::new($args[0].clone()), Box::new($args[1].clone())),
+                "bvand" => {
+                    <$expr_type>::BvAnd(Box::new($args[0].clone()), Box::new($args[1].clone()))
                 }
-                match $id.as_str() {
-                    "=" => {
-                        <$expr_type>::Equal(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "and" => {
-                        <$expr_type>::And(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "or" => {
-                        <$expr_type>::Or(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "xor" => {
-                        <$expr_type>::Xor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "iff" => {
-                        <$expr_type>::Iff(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvand" => {
-                        <$expr_type>::BvAnd(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvor" => {
-                        <$expr_type>::BvOr(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvxor" => {
-                        <$expr_type>::BvXor(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvadd" => {
-                        <$expr_type>::BvAdd(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvmul" => {
-                        <$expr_type>::BvMul(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvsub" => {
-                        <$expr_type>::BvSub(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvudiv" => {
-                        <$expr_type>::BvUdiv(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvurem" => {
-                        <$expr_type>::BvUrem(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvshl" => {
-                        <$expr_type>::BvShl(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvlshr" => {
-                        <$expr_type>::BvLshr(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    "bvult" => {
-                        <$expr_type>::BvUlt(Box::new(exprs[0].clone()), Box::new(exprs[1].clone()))
-                    }
-                    _ => unreachable!(),
+                "bvor" => {
+                    <$expr_type>::BvOr(Box::new($args[0].clone()), Box::new($args[1].clone()))
                 }
-            }
-            "bvnot" => <$expr_type>::BvNot(Box::new(
-                $self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?,
-            )),
-            "bvneg" => <$expr_type>::BvNeg(Box::new(
-                $self.$visit_method($env, $pairs.clone().into_inner().next().unwrap())?,
-            )),
+                "bvxor" => {
+                    <$expr_type>::BvXor(Box::new($args[0].clone()), Box::new($args[1].clone()))
+                }
+                "bvadd" => {
+                    <$expr_type>::BvAdd(Box::new($args[0].clone()), Box::new($args[1].clone()))
+                }
+                "bvmul" => {
+                    <$expr_type>::BvMul(Box::new($args[0].clone()), Box::new($args[1].clone()))
+                }
+                "bvsub" => {
+                    <$expr_type>::BvSub(Box::new($args[0].clone()), Box::new($args[1].clone()))
+                }
+                "bvudiv" => {
+                    <$expr_type>::BvUdiv(Box::new($args[0].clone()), Box::new($args[1].clone()))
+                }
+                "bvurem" => {
+                    <$expr_type>::BvUrem(Box::new($args[0].clone()), Box::new($args[1].clone()))
+                }
+                "bvshl" => {
+                    <$expr_type>::BvShl(Box::new($args[0].clone()), Box::new($args[1].clone()))
+                }
+                "bvlshr" => {
+                    <$expr_type>::BvLshr(Box::new($args[0].clone()), Box::new($args[1].clone()))
+                }
+                "bvult" => {
+                    <$expr_type>::BvUlt(Box::new($args[0].clone()), Box::new($args[1].clone()))
+                }
+                _ => unreachable!(),
+            },
+            "bvnot" => <$expr_type>::BvNot(Box::new($args[0].clone())),
+            "bvneg" => <$expr_type>::BvNeg(Box::new($args[0].clone())),
             _ => panic!(
-                "Unknown operator: {}\nCurrent environment: {:#?}",
-                $id, $env
+                "Unknown operator: {}\nCurrent environment: {:#?}\nCurrent sygus_prog: {:#?}",
+                $id, $env, $self.sygus_prog
             ),
         }
     };
@@ -471,255 +448,60 @@ impl Visitor for SyGuSVisitor {
     }
     // Term
     fn visit_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Expr, Error<Rule>> {
-        let mut env = env.clone();
-        let env_str = format!("{:#?}", env);
-        let length = pairs.clone().into_inner().count();
-        let pairs_str = format!("{:#?}", pairs.clone());
-        if length == 0 {
-            // just the pairs itself
-            let pair = pairs.clone();
-            let pair_str = format!("{:#?}", pair.clone());
-            match pair.as_rule() {
-                Rule::Identifier => self.visit_term_ident(&env, pair),
-                Rule::Literal => self.visit_term_literal(&env, pair),
-                _ => unreachable!(
-                    "Term should only have Identifier or Literal as children when length is 0"
-                ),
-            }
-        } else if length <= 1 {
-            let pair = pairs.clone().into_inner().next().unwrap();
-            match pair.as_rule() {
-                Rule::Identifier => self.visit_term_ident(&env, pair),
-                Rule::Literal => self.visit_term_literal(&env ,pair),
-                other => unreachable!(
-                    "Term should only have Identifier or Literal as children when length is 1, but got {:?}", other
-                ),
-            }
-        } else {
-            let mut expr = Expr::Var("".to_string(), Sort::None);
-            let mut id = String::new();
-            let length = pairs.clone().into_inner().count();
-            let pairs_str = format!("{:#?}", pairs.clone());
-            for pair in pairs.clone().into_inner() {
-                let pair_str = format!("{:#?}", pair.clone());
-                match pair.as_rule() {
-                    Rule::Identifier => {
-                        id = pair.as_str().to_string();
-                        // try to find id in env
-                        if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
-                            // if found, create a variable expression
-                            expr = Expr::Var(id.clone(), sort.clone());
-                            env.push((id, sort.clone()));
-                        } else {
-                            // expr = parse_expr!(id, Expr, self, &env, pairs.clone(), visit_term);
-                            // expand the parse_expr! macro below
-                            match id.as_str() {
-                                // Unary Operators
-                                "not" => {
-                                    expr = Expr::Not(Box::new(self.visit_term(
-                                        &env,
-                                        pairs.clone().into_inner().next().unwrap(),
-                                    )?));
-                                }
-                                // Binary Operators
-                                "=" | "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor"
-                                | "bvadd" | "bvmul" | "bvsub" | "bvudiv" | "bvurem" | "bvshl"
-                                | "bvlshr" | "bvult" => {
-                                    let mut exprs = Vec::new();
-                                    for pair in pairs.clone().into_inner() {
-                                        let expr = self.visit_term(&env, pair)?;
-                                        exprs.push(expr);
-                                    }
-                                    match id.as_str() {
-                                        "=" => {
-                                            expr = Expr::Equal(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "and" => {
-                                            expr = Expr::And(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "or" => {
-                                            expr = Expr::Or(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "xor" => {
-                                            expr = Expr::Xor(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "iff" => {
-                                            expr = Expr::Iff(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvand" => {
-                                            expr = Expr::BvAnd(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvor" => {
-                                            expr = Expr::BvOr(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvxor" => {
-                                            expr = Expr::BvXor(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvadd" => {
-                                            expr = Expr::BvAdd(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvmul" => {
-                                            expr = Expr::BvMul(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvsub" => {
-                                            expr = Expr::BvSub(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvudiv" => {
-                                            expr = Expr::BvUdiv(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvurem" => {
-                                            expr = Expr::BvUrem(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvshl" => {
-                                            expr = Expr::BvShl(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvlshr" => {
-                                            expr = Expr::BvLshr(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        "bvult" => {
-                                            expr = Expr::BvUlt(
-                                                Box::new(exprs[0].clone()),
-                                                Box::new(exprs[1].clone()),
-                                            )
-                                        }
-                                        _ => unreachable!(),
-                                    }
-                                }
-                                _ => panic!(
-                                    "Unknown operator: {}\nCurrent environment: {:#?}",
-                                    id, env
-                                ),
-                            }
-                        }
-                    }
-                    Rule::Literal => {
-                        id = pair.as_str().to_string();
-                        match pair.into_inner().next().unwrap().as_rule() {
-                            Rule::Numeral => {
-                                let val = id.parse::<i64>().unwrap();
-                                expr = Expr::ConstInt(val);
-                            }
-                            Rule::BoolConst => {
-                                let val = id.parse::<bool>().unwrap();
-                                expr = Expr::ConstBool(val);
-                            }
-                            Rule::HexConst => {
-                                let val = u64::from_str_radix(&id[2..], 16).unwrap();
-                                expr = Expr::ConstBitVec(val);
-                            }
-                            Rule::StringConst => expr = Expr::Var(id, Sort::String),
-                            _ => {
-                                // skip Decimal, BinConst
-                            }
-                        }
-                    }
-                    Rule::Term => {
-                        expr = self.visit_term(&env, pair)?;
-                        // TODO: need to store the id, sort, and expr
-                    }
-                    _ => unreachable!(
-                        "The third branch should only have Identifier or Term as children"
-                    ),
-                }
-            }
-            Ok(expr)
-        }
-    }
+        let mut expr = Expr::Var("".to_string(), Sort::None);
+        let mut pairs_iter = pairs.clone().into_inner();
 
-    fn visit_bf_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
-        let mut env = env.clone();
-        let length = pairs.clone().into_inner().count();
-        if length == 0 {
-            // just the pairs itself
-            let pair = pairs.clone();
-            match pair.as_rule() {
-                Rule::Identifier => self.visit_bfterm_ident(&env, pair),
-                Rule::Literal => self.visit_bfterm_literal(&env, pair),
-                _ => unreachable!(
-                    "BfTerm should only have Identifier or Literal as children when length is 0"
-                ),
-            }
-        } else if length <= 1 {
-            let pair = pairs.clone().into_inner().next().unwrap();
-            match pair.as_rule() {
-                Rule::Identifier => self.visit_bfterm_ident(&env, pair),
-                Rule::Literal => self.visit_bfterm_literal(&env, pair),
-                _ => unreachable!(
-                    "BfTerm should only have Identifier or Literal as children when length is 1"
-                ),
-            }
-        } else {
-            let mut expr = GExpr::Var("".to_string(), Sort::None);
-            let mut id = String::new();
-            for pair in pairs.clone().into_inner() {
-                match pair.as_rule() {
-                    Rule::Identifier => {
-                        id = pair.as_str().to_string();
-                        // try to find id in env
-                        if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
-                            // if found, create a variable expression
-                            expr = GExpr::Var(id.clone(), sort.clone());
-                            env.push((id, sort.clone()));
-                        } else {
-                            expr = parse_expr!(id, GExpr, self, &env, pairs.clone(), visit_bf_term);
+        if let Some(first_pair) = pairs_iter.next() {
+            match first_pair.as_rule() {
+                Rule::Identifier => {
+                    let id = first_pair.as_str().to_string();
+                    if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
+                        expr = Expr::Var(id.clone(), sort.clone());
+                    } else {
+                        let mut args = Vec::new();
+                        for pair in pairs_iter {
+                            args.push(self.visit_term(env, pair)?);
                         }
+                        expr = parse_expr!(id, Expr, self, env, args, visit_term);
                     }
-                    Rule::BfTerm => {
-                        expr = self.visit_bf_term(&env, pair)?;
-                        // TODO: need to store the id, sort, and expr
+                }
+                Rule::Literal => {
+                    expr = self.visit_term_literal(env, first_pair)?;
+                }
+                _ => unreachable!("Term should only have Identifier or Literal as the first child"),
+            }
+        }
+
+        Ok(expr)
+    }
+    fn visit_bf_term(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<GExpr, Error<Rule>> {
+        let mut expr = GExpr::Var("".to_string(), Sort::None);
+        let mut pairs_iter = pairs.clone().into_inner();
+
+        if let Some(first_pair) = pairs_iter.next() {
+            match first_pair.as_rule() {
+                Rule::Identifier => {
+                    let id = first_pair.as_str().to_string();
+                    if let Some((_, sort)) = env.iter().find(|(k, _)| k == &id) {
+                        expr = GExpr::Var(id.clone(), sort.clone());
+                    } else {
+                        let mut args = Vec::new();
+                        for pair in pairs_iter {
+                            args.push(self.visit_bf_term(env, pair)?);
+                        }
+                        expr = parse_expr!(id, GExpr, self, env, args, visit_bf_term);
                     }
-                    _ => unreachable!(
-                        "The third branch should only have Identifier or BfTerm as children"
-                    ),
+                }
+                Rule::Literal => {
+                    expr = self.visit_bfterm_literal(env, first_pair)?;
+                }
+                _ => {
+                    unreachable!("BfTerm should only have Identifier or Literal as the first child")
                 }
             }
-            Ok(expr)
         }
+
+        Ok(expr)
     }
     fn visit_sorted_var(&mut self, pairs: Pair<Rule>) -> Result<(Symbol, Sort), Error<Rule>> {
         let mut var_name = String::new();
