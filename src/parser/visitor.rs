@@ -93,7 +93,7 @@ macro_rules! parse_expr {
                     // if id also in the define_fun or synth_fun name, then it is a function application
                     if $self.sygus_prog.define_fun.contains_key(&$id) || $self.sygus_prog.synth_func.contains_key(&$id)
                     {
-                        <$expr_type>::FuncApply($id.to_string(), $args)
+                        <$expr_type>::FuncApply($id.to_string(), $args.to_vec())
                     } else {
                         <$expr_type>::Var($id.to_string(), sort.clone())
                     }
@@ -101,42 +101,14 @@ macro_rules! parse_expr {
                     if $args.is_empty() {
                         <$expr_type>::Var($id.to_string(), Sort::default())
                     } else {
-                        <$expr_type>::FuncApply($id.to_string(), $args)
+                        <$expr_type>::FuncApply($id.to_string(), $args.to_vec())
                     }
                 }
             }
         }
     };
 }
-macro_rules! parse_gexpr {
-    ($id:ident, $expr_type:ty, $self:ident, $env:expr, $args:expr, $visit_method:ident) => {
-        match $id.as_str() {
-            "not" => <$expr_type>::Not(Box::new($args[0].clone())),
-            "and" | "or" | "xor" | "iff" | "bvand" | "bvor" | "bvxor" | "bvadd" | "bvmul" | "bvsub" | "bvudiv"
-            | "bvurem" | "bvshl" | "bvlshr" | "bvult" => match $id.as_str() {
-                "and" => <$expr_type>::And(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "or" => <$expr_type>::Or(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "xor" => <$expr_type>::Xor(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "iff" => <$expr_type>::Iff(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvand" => <$expr_type>::BvAnd(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvor" => <$expr_type>::BvOr(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvxor" => <$expr_type>::BvXor(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvadd" => <$expr_type>::BvAdd(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvmul" => <$expr_type>::BvMul(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvsub" => <$expr_type>::BvSub(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvudiv" => <$expr_type>::BvUdiv(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvurem" => <$expr_type>::BvUrem(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvshl" => <$expr_type>::BvShl(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvlshr" => <$expr_type>::BvLshr(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                "bvult" => <$expr_type>::BvUlt(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                _ => <$expr_type>::Var("".to_string(), Sort::default())
-            },
-            "bvnot" => <$expr_type>::BvNot(Box::new($args[0].clone())),
-            "bvneg" => <$expr_type>::BvNeg(Box::new($args[0].clone())),
-            _ => <$expr_type>::Var("".to_string(), Sort::default())
-        }
-    };
-}
+
 impl Visitor for SyGuSVisitor {
     type Prog = SyGuSProg;
     type Env = Vec<(String, Sort)>;
@@ -449,7 +421,7 @@ impl Visitor for SyGuSVisitor {
                         let pair_str = format!("{:#?}", pair.clone());
                         args.push(self.visit_term(env, pair)?);
                     }
-                    expr = parse_expr!(id, Expr, self, env, args, visit_term);
+                    expr = parse_expr!(id, Expr, self, env, &args, visit_term);
                 }
                 Rule::Literal => {
                     expr = self.visit_term_literal(env, first_pair)?;
@@ -475,7 +447,7 @@ impl Visitor for SyGuSVisitor {
                         for pair in pairs_iter {
                             args.push(self.visit_bfterm(env, pair)?);
                         }
-                        expr = parse_gexpr!(id, GExpr, self, env, args, visit_bfterm);
+                        expr = parse_expr!(id, GExpr, self, env, &args, visit_bfterm);
                         if expr == GExpr::Var("".to_string(), Sort::default()) {
                             expr = GExpr::GFuncApply(id, args);
                         }
