@@ -2,7 +2,6 @@ pub mod baseline_solver;
 pub mod egg_solver;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 
 use crate::parser::ast;
 
@@ -76,62 +75,5 @@ pub trait GrammarTrait {
 impl GrammarTrait for ast::GrammarDef {
     fn non_terminals(&self) -> &[ast::Production] {
         &self.non_terminals
-    }
-}
-
-pub struct Enumerator<'a, S: Solver> {
-    solver: &'a S,
-    grammar: &'a S::Grammar,
-    constraints: &'a [S::Constraint],
-    cache: HashMap<(ast::ProdName, usize), Vec<ast::GExpr>>,
-    current_size: usize
-}
-
-impl<'a, S: Solver> Enumerator<'a, S> {
-    pub fn new(solver: &'a S, grammar: &'a S::Grammar, constraints: &'a [S::Constraint]) -> Self {
-        Enumerator {
-            solver,
-            grammar,
-            constraints,
-            cache: HashMap::new(),
-            current_size: 0
-        }
-    }
-
-    fn grow(&mut self, non_terminal: &ast::ProdName) {
-        let size = self.current_size;
-        if let Some(productions) = self.grammar.non_terminals().iter().find(|p| &p.lhs == non_terminal) {
-            let mut expressions = Vec::new();
-            for production in &productions.rhs {
-                // TODO: implement the logic to generate expressions based on the production rules
-            }
-            self.cache.insert((non_terminal.clone(), size), expressions);
-        }
-    }
-}
-impl<'a, S: Solver> Iterator for Enumerator<'a, S> {
-    type Item = ast::GExpr;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            for non_terminal in self.grammar.non_terminals().iter().map(|p| &p.lhs) {
-                if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                    if let Some(expr) = expressions.get(0) {
-                        return Some(expr.clone());
-                    }
-                } else {
-                    self.grow(non_terminal);
-                    if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                        if let Some(expr) = expressions.get(0) {
-                            return Some(expr.clone());
-                        }
-                    }
-                }
-            }
-            self.current_size += 1;
-            if self.current_size > S::MAX_SIZE {
-                return None;
-            }
-        }
     }
 }
