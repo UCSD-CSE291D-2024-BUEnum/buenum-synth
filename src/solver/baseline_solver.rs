@@ -1,8 +1,9 @@
+use crate::solver::ast::GTerm;
 use std::collections::HashMap;
-
 use crate::parser::ast::*;
 use crate::solver::GrammarTrait;
 use crate::solver::Solver;
+
 pub struct BaselineSolver;
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -21,7 +22,7 @@ pub struct BaselineEnumerator<'a, S: Solver> {
     grammar: &'a S::Grammar,
     counterexamples: &'a [S::CounterExample],
     cache: HashMap<(ProdName, usize), Vec<GExpr>>,
-    current_size: usize
+    current_size: usize,
 }
 
 impl<'a, S: Solver> BaselineEnumerator<'a, S> {
@@ -31,21 +32,47 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             grammar,
             counterexamples,
             cache: HashMap::new(),
-            current_size: 0
+            current_size: 0,
         }
     }
 
     fn grow(&mut self, non_terminal: &ProdName) {
         let size = self.current_size;
-        if let Some(productions) = self.grammar.non_terminals().iter().find(|p| &p.lhs == non_terminal) {
-            let mut expressions = Vec::new();
-            for production in &productions.rhs {
-                // TODO: implement the logic to generate expressions based on the production rules
+        if let Some(productions) = self.grammar.non_terminals().iter().find(|p| p.lhs == *non_terminal) {
+            let mut generated_terms: Vec<GExpr> = Vec::new();
+            self.terms(productions, size, &mut generated_terms);
+            self.cache.entry((non_terminal.clone(), size)).or_insert(generated_terms);
+        }
+    }
+
+
+    fn terms(&self, productions: &Production, d: usize, all_expressions: &mut Vec<GExpr>) {
+        let lhs = &productions.lhs;
+        let rhs = &productions.rhs;
+        for production in rhs {
+            if d == 0 {
+                match production {
+                    GTerm::BfTerm(expr) => {
+                        match expr {
+                            GExpr::ConstBool(_)
+                            | GExpr::ConstInt(_)
+                            | GExpr::ConstBitVec(_)
+                            | GExpr::ConstString(_)
+                            | GExpr::Var(_, _)
+                            | GExpr::BvConst(_, _)
+                            => all_expressions.push(expr.clone()),
+                            _ => {}
+                        }
+                    }
+                    _ => eprint!("Unsupported Production Type!"),
+                }
+            } else {
+                // TODO: new terms
             }
-            self.cache.entry((non_terminal.clone(), size)).or_insert(expressions);
         }
     }
 }
+
 impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
     type Item = Expr;
 
@@ -83,18 +110,22 @@ impl Solver for BaselineSolver {
     fn enumerate<'a>(
         &'a self,
         g: &'a Self::Grammar,
-        c: &'a [Self::CounterExample]
-    ) -> Box<dyn Iterator<Item = Self::Expr> + 'a> {
+        c: &'a [Self::CounterExample],
+    ) -> Box<dyn Iterator<Item=Self::Expr> + 'a> {
         let enumerator = BaselineEnumerator::new(self, g, c);
         Box::new(enumerator)
     }
 
-    fn extract_grammar(&self, p: &Self::Prog, func_name: &str) -> Self::Grammar {
-        // TODO: Extract the grammar for the specified function from the SyGuS program
-        unimplemented!()
+    fn extract_grammar<'a>(&'a self, p: &'a Self::Prog, func_name: &str) -> &'a Self::Grammar {
+        let synth = &p.synth_func;
+        match synth.get(func_name) {
+            Some((_, grammar)) => grammar,
+            None => panic!("Function not found"), // You might handle the None case differently
+        }
     }
 
-    fn extract_constraint(&self, p: &Self::Prog) -> Self::Constraint {
+
+    fn extract_constraint(&self, p: &Self::Prog) -> &Self::Constraint {
         // TODO: Extract the constraint from the SyGuS program
         unimplemented!()
     }

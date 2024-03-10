@@ -19,9 +19,9 @@ pub trait Solver {
         c: &'a [Self::CounterExample]
     ) -> Box<dyn Iterator<Item = Self::Expr> + 'a>;
 
-    fn extract_grammar(&self, p: &Self::Prog, func_name: &str) -> Self::Grammar;
+    fn extract_grammar<'a>(&'a self, p: &'a Self::Prog, func_name: &str) -> &Self::Grammar;
 
-    fn extract_constraint(&self, p: &Self::Prog) -> Self::Constraint;
+    fn extract_constraint(&self, p: &Self::Prog) -> &Self::Constraint;
 
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Result<(), Self::CounterExample>;
 

@@ -1,13 +1,14 @@
-pub mod ast;
-pub mod eval;
-pub mod visitor;
-
 use pest::error::Error;
 use pest::Parser;
 use pest_derive::Parser;
 
-use self::visitor::SyGuSVisitor;
 use crate::parser::visitor::Visitor;
+
+use self::visitor::SyGuSVisitor;
+
+pub mod ast;
+pub mod eval;
+pub mod visitor;
 
 #[derive(Parser)]
 #[grammar = "parser/grammar.pest"] // relative to project `src`
