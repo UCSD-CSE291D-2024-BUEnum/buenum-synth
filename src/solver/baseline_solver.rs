@@ -89,7 +89,7 @@ impl Solver for BaselineSolver {
             Expr::Var(_, _) => todo!(),
             Expr::FuncApply(_, _) => todo!(),
             Expr::Let(_, _) => todo!(),
-            Expr::Not(b) => Box::from(z3::ast::Bool::from_bool(ctx, self.expr_to_smt(b, vars, ctx).into())),
+            Expr::Not(b) => Box::from(z3::ast::Bool::from_bool(ctx, !self.expr_to_smt(b, vars, ctx).into())),
             Expr::And(_, _) => todo!(),
             Expr::Or(_, _) => todo!(),
             Expr::Xor(_, _) => todo!(),
