@@ -26,7 +26,9 @@ pub trait Solver {
 
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Option<Self::CounterExample>;
 
-    fn expr_to_smt<'a>(&'a self, expr: &Self::Expr, vars: &HashMap<String, z3::ast::String>, ctx: &'a z3::Context) -> Box<dyn z3::ast::Ast + 'a>;
+    fn expr_to_smt<'a>(&'a self, expr: &Self::Expr, vars: &Vec<String>, ctx: &'a z3::Context) -> Box<dyn z3::ast::Ast<'a> + 'a>;
+
+    fn z3_ast_to_z3_bool(&self, ast: Box<dyn z3::ast::Ast>) -> Box<z3::ast::Bool>;
 
     fn synthesize(&self, p: &Self::Prog, func_name: &str) -> Option<Self::Expr> {
         let counterexamples: RefCell<Vec<Self::CounterExample>> = RefCell::new(Vec::new()); // we need to use RefCell because we cannot decide the reference lifetime statically

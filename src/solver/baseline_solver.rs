@@ -52,14 +52,16 @@ impl Solver for BaselineSolver {
             let ctx = z3::Context::new(&cfg);
             let solver = z3::Solver::new(&ctx);
 
-            let vars: HashMap<String, z3::ast::String> = HashMap::new();
+            let vars: Vec<String> = Vec::new();
             // TODO: add declare_vars into vars
 
             // TODO: add define_funs into solver
 
             // TODO: add func_name with expr into solver
 
-            solver.assert(&self.expr_to_smt(&cond, &vars, &ctx).into());
+            let b = self.expr_to_smt(&cond, &vars, &ctx);
+            solver.assert(&self.z3_ast_to_z3_bool(b).not());
+
             match solver.check() {
                 z3::SatResult::Unsat => {} // check next constraint
                 z3::SatResult::Unknown => panic!("Unknown z3 solver result"),
@@ -75,22 +77,29 @@ impl Solver for BaselineSolver {
         return None;
     }
 
+    // Helper: convert an Expr to a z3::ast::Ast
     fn expr_to_smt<'a>(
         &'a self,
         expr: &Expr,
-        vars: &HashMap<String, z3::ast::String>,
+        vars: &Vec<String>,
         ctx: &'a z3::Context,
-    ) -> Box<dyn z3::ast::Ast + 'a> {
+    ) -> Box<dyn z3::ast::Ast<'a> + 'a> {
         match expr {
             Expr::ConstBool(b) => Box::from(z3::ast::Bool::from_bool(ctx, b.clone())),
             Expr::ConstInt(i) => Box::from(z3::ast::Int::from_i64(ctx, i.clone())),
             Expr::ConstBitVec(bv) => Box::from(z3::ast::BV::from_u64(ctx, bv.clone(), 0)), // TODO: check from_u64 params in z3 docs
-            Expr::ConstString(s) => todo!(),
+            Expr::ConstString(s) => Box::from(z3::ast::String::from_str(ctx, s.as_str()).unwrap()),
             Expr::Var(_, _) => todo!(),
             Expr::FuncApply(_, _) => todo!(),
             Expr::Let(_, _) => todo!(),
-            Expr::Not(b) => Box::from(z3::ast::Bool::from_bool(ctx, !self.expr_to_smt(b, vars, ctx).into())),
-            Expr::And(_, _) => todo!(),
+            Expr::Not(b) => Box::from(self.z3_ast_to_z3_bool(self.expr_to_smt(b, vars, ctx)).not()),
+            Expr::And(b1, b2) => Box::from(z3::ast::Bool::and(
+                ctx,
+                &[
+                    &self.z3_ast_to_z3_bool(self.expr_to_smt(b1, vars, ctx)),
+                    &self.z3_ast_to_z3_bool(self.expr_to_smt(b2, vars, ctx)),
+                ],
+            )),
             Expr::Or(_, _) => todo!(),
             Expr::Xor(_, _) => todo!(),
             Expr::Iff(_, _) => todo!(),
@@ -112,10 +121,13 @@ impl Solver for BaselineSolver {
             Expr::UnknownExpr => todo!(),
         }
     }
-}
 
-impl From<dyn z3::ast::Ast<'_>> for z3::ast::Bool<'_> {
-    fn from(ast: dyn z3::ast::Ast) -> Self {
-        todo!()
+    // Helper: unsafe cast to z3::ast::Bool due to the lack of dyn trait downcasting
+    fn z3_ast_to_z3_bool(&self, ast: Box<dyn z3::ast::Ast>) -> Box<z3::ast::Bool> {
+        let t = ast.get_z3_ast();
+        unsafe {
+            let b = std::mem::transmute::<&z3_sys::Z3_ast, &z3::ast::Bool>(&t);
+            Box::new(b.clone())
+        }
     }
 }
