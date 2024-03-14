@@ -14,7 +14,7 @@ pub struct BaselineConstraint {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct BaselineCounterExample {
-    assignment: HashMap<String, Expr>,
+    assignment: HashMap<Symbol, Expr>,
 }
 
 impl Solver for BaselineSolver {
@@ -87,7 +87,7 @@ impl Solver for BaselineSolver {
         }
 
         // Add define_funs into solver
-        let mut funcs: HashMap<String, z3::FuncDecl> = HashMap::new();
+        let mut funcs: HashMap<String, z3::RecFuncDecl> = HashMap::new();
         for f_name in define_funs.keys() {
             let f_params = &define_funs[f_name].params;
             let mut domain: Vec<z3::Sort> = Vec::new();
@@ -112,9 +112,8 @@ impl Solver for BaselineSolver {
             };
 
             let f_body = &define_funs[f_name].body;
-            // TODO: add function body
-            let decl = z3::FuncDecl::new(&ctx, f_name.clone(), domain_references.as_slice(), &range);
-
+            let decl = z3::RecFuncDecl::new(&ctx, f_name.clone(), domain_references.as_slice(), &range);
+            //TODO: add function body
             funcs.insert(f_name.clone(), decl);
         }
 
@@ -174,8 +173,21 @@ impl Solver for BaselineSolver {
             z3::SatResult::Unknown => panic!("Unknown z3 solver result"),
             z3::SatResult::Sat => {
                 let model = solver.get_model().unwrap();
-                let assignment: HashMap<String, Expr> = HashMap::new();
-                // TODO: return value assignments in the model
+                let mut assignment: HashMap<String, Expr> = HashMap::new();
+                for (name, sort) in declare_vars {
+                    let interp = model.get_const_interp(&vars[&name.clone()]).unwrap();
+                    assignment.insert(
+                        name.clone(),
+                        match sort {
+                            Sort::Bool => Expr::ConstBool(interp.as_bool().unwrap().as_bool().unwrap()),
+                            Sort::Int => Expr::ConstInt(interp.as_int().unwrap().as_i64().unwrap()),
+                            Sort::BitVec(_) => Expr::ConstBitVec(interp.as_bv().unwrap().as_u64().unwrap()),
+                            Sort::Compound(_, _) => unimplemented!("Not supporting compound solving"),
+                            Sort::String => Expr::ConstString(interp.as_string().unwrap().as_string().unwrap()),
+                            Sort::None => panic!("Unsupported sort"),
+                        },
+                    );
+                }
 
                 return Some(Self::CounterExample { assignment });
             }
@@ -186,7 +198,7 @@ impl Solver for BaselineSolver {
         &self,
         expr: &Self::Expr,
         vars: &'ctx HashMap<String, z3::ast::Dynamic>,
-        funcs: &'ctx HashMap<String, z3::FuncDecl>,
+        funcs: &'ctx HashMap<String, z3::RecFuncDecl>,
         ctx: &'ctx z3::Context,
     ) -> Box<z3::ast::Dynamic<'ctx>> {
         macro_rules! bv_unary_operation {
