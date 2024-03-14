@@ -47,49 +47,110 @@ impl Solver for BaselineSolver {
         let declare_vars = p.declare_var.clone();
         let define_funs = p.define_fun.clone();
         // if any neg(cond) is sat, return the assignment as counter-example
-        for cond in constraints {
-            let cfg = z3::Config::new();
-            let ctx = z3::Context::new(&cfg);
-            let solver = z3::Solver::new(&ctx);
 
-            let vars: Vec<String> = Vec::new();
-            // TODO: add declare_vars into vars
+        let cfg = z3::Config::new();
+        let ctx = z3::Context::new(&cfg);
+        let solver = z3::Solver::new(&ctx);
 
-            // TODO: add define_funs into solver
-
-            // TODO: add func_name with expr into solver
-
-            solver.assert(&self.expr_to_z3_bool(&cond, &vars, &ctx).not());
-
-            match solver.check() {
-                z3::SatResult::Unsat => {} // check next constraint
-                z3::SatResult::Unknown => panic!("Unknown z3 solver result"),
-                z3::SatResult::Sat => {
-                    let model = solver.get_model().unwrap();
-                    let assignment: HashMap<String, Expr> = HashMap::new();
-                    // TODO: return value assignments in the model
-
-                    return Some(Self::CounterExample { assignment });
+        // declare variables which are used in the constraint
+        let mut vars: HashMap<String, z3::ast::Dynamic> = HashMap::new();
+        for v in declare_vars.keys() {
+            match declare_vars[v] {
+                Sort::Bool => {
+                    vars.insert(
+                        v.clone(),
+                        z3::ast::Dynamic::from(z3::ast::Bool::new_const(&ctx, v.clone())),
+                    );
                 }
+                Sort::Int => {
+                    vars.insert(
+                        v.clone(),
+                        z3::ast::Dynamic::from(z3::ast::Int::new_const(&ctx, v.clone())),
+                    );
+                }
+                Sort::BitVec(w) => {
+                    vars.insert(
+                        v.clone(),
+                        z3::ast::Dynamic::from(z3::ast::BV::new_const(&ctx, v.clone(), w as u32)),
+                    );
+                }
+                Sort::String => {
+                    vars.insert(
+                        v.clone(),
+                        z3::ast::Dynamic::from(z3::ast::String::new_const(&ctx, v.clone())),
+                    );
+                }
+                _ => panic!("Unsupported sort"),
             }
         }
-        return None;
+
+        // TODO: add define_funs into solver
+
+        // TODO: add func_name with expr into solver
+
+        let mut clauses: Vec<z3::ast::Bool> = Vec::new();
+        for c in constraints {
+            clauses.push(self.expr_to_smt(&c, &vars, &ctx).as_bool().unwrap().not());
+        }
+        let clauses_references: Vec<&z3::ast::Bool<'_>> = clauses.iter().collect();
+        solver.assert(&z3::ast::Bool::or(&ctx, clauses_references.as_slice()));
+
+        match solver.check() {
+            z3::SatResult::Unsat => None,
+            z3::SatResult::Unknown => panic!("Unknown z3 solver result"),
+            z3::SatResult::Sat => {
+                let model = solver.get_model().unwrap();
+                let assignment: HashMap<String, Expr> = HashMap::new();
+                // TODO: return value assignments in the model
+
+                return Some(Self::CounterExample { assignment });
+            }
+        }
     }
 
-    fn expr_to_z3_bool<'ctx>(&self, expr: &Self::Expr, vars: &Vec<String>, ctx: &'ctx z3::Context) -> z3::ast::Bool<'ctx> {
+    fn expr_to_smt<'ctx>(
+        &self,
+        expr: &Self::Expr,
+        vars: &'ctx HashMap<String, z3::ast::Dynamic>,
+        ctx: &'ctx z3::Context,
+    ) -> Box<z3::ast::Dynamic<'ctx>> {
         match expr {
-            Expr::ConstBool(b) => z3::ast::Bool::from_bool(&ctx, *b),
-            Expr::ConstInt(i) => panic!("Cannot convert integer to boolean"),
-            Expr::ConstBitVec(bv) => panic!("Cannot convert bitvector to boolean"),
-            Expr::ConstString(s) => panic!("Cannot convert string to boolean"),
-            Expr::Var(_, _) => todo!(),
+            Expr::ConstBool(b) => Box::from(z3::ast::Dynamic::from(z3::ast::Bool::from_bool(ctx, *b))),
+            Expr::ConstInt(i) => Box::from(z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, *i))),
+            Expr::ConstBitVec(u) => Box::from(z3::ast::Dynamic::from(z3::ast::BV::from_u64(ctx, *u, 64))),
+            Expr::ConstString(s) => todo!(),
+            Expr::Var(symbol, _) => Box::from(vars[symbol].clone()),
             Expr::FuncApply(_, _) => todo!(),
-            Expr::Let(_, _) => todo!(),
-            Expr::Not(b) => todo!(),
-            Expr::And(b1, b2) => todo!(),
-            Expr::Or(_, _) => todo!(),
-            Expr::Xor(_, _) => todo!(),
-            Expr::Iff(_, _) => todo!(),
+            Expr::Let(_, _) => unimplemented!("Not supporting lamdba calculus in constraints."),
+            Expr::Not(e) => Box::from(z3::ast::Dynamic::from(
+                self.expr_to_smt(e, vars, ctx).as_bool().unwrap().not(),
+            )),
+            Expr::And(e1, e2) => Box::from(z3::ast::Dynamic::from(z3::ast::Bool::and(
+                ctx,
+                &[
+                    &self.expr_to_smt(e1, vars, ctx).as_bool().unwrap(),
+                    &self.expr_to_smt(e2, vars, ctx).as_bool().unwrap(),
+                ],
+            ))),
+            Expr::Or(e1, e2) => Box::from(z3::ast::Dynamic::from(z3::ast::Bool::or(
+                ctx,
+                &[
+                    &self.expr_to_smt(e1, vars, ctx).as_bool().unwrap(),
+                    &self.expr_to_smt(e2, vars, ctx).as_bool().unwrap(),
+                ],
+            ))),
+            Expr::Xor(e1, e2) => Box::from(z3::ast::Dynamic::from(
+                self.expr_to_smt(e1, vars, ctx)
+                    .as_bool()
+                    .unwrap()
+                    .xor(&self.expr_to_smt(e2, vars, ctx).as_bool().unwrap()),
+            )),
+            Expr::Iff(e1, e2) => Box::from(z3::ast::Dynamic::from(
+                self.expr_to_smt(e1, vars, ctx)
+                    .as_bool()
+                    .unwrap()
+                    .iff(&self.expr_to_smt(e2, vars, ctx).as_bool().unwrap()),
+            )),
             Expr::Equal(_, _) => todo!(),
             Expr::BvAnd(_, _) => todo!(),
             Expr::BvOr(_, _) => todo!(),
@@ -104,8 +165,12 @@ impl Solver for BaselineSolver {
             Expr::BvLshr(_, _) => todo!(),
             Expr::BvNeg(_) => todo!(),
             Expr::BvUlt(_, _) => todo!(),
-            Expr::BvConst(_, _) => todo!(),
-            Expr::UnknownExpr => todo!(),
+            Expr::BvConst(v, width) => Box::from(z3::ast::Dynamic::from(z3::ast::BV::from_u64(
+                ctx,
+                *v as u64,
+                *width as u32,
+            ))),
+            Expr::UnknownExpr => panic!("Unknown expression"),
         }
     }
 }

@@ -26,7 +26,7 @@ pub trait Solver {
 
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Option<Self::CounterExample>;
 
-    fn expr_to_z3_bool<'ctx>(&self, expr: &Self::Expr, vars: &Vec<String>, ctx: &'ctx z3::Context) -> z3::ast::Bool<'ctx>;
+    fn expr_to_smt<'ctx>(&self, expr: &Self::Expr, vars: &'ctx HashMap<String, z3::ast::Dynamic>, ctx: &'ctx z3::Context) -> Box<z3::ast::Dynamic<'ctx>>;
 
     // fn expr_to_smt<'a>(&'a self, expr: &Self::Expr, vars: &Vec<String>, ctx: &'a z3::Context) -> Box<dyn z3::ast::Ast<'a> + 'a>;
 
