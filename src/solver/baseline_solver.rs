@@ -25,20 +25,24 @@ pub struct BaselineEnumerator<'a, S: Solver> {
     current_size: usize,
 }
 
-// d: enumeration depth, k: number of non-terminals in rhs
-pub fn permutation(d: i32, k: i32, ans: &mut Vec<Vec<i32>>, curr: &mut Vec<i32>){
-    if k == 0 {
-        if d == 1 {
-            ans.push(curr.clone());
-        }
-        return;
+struct Counter {
+    value: usize,
+}
+
+impl Counter {
+    fn new(n: usize) -> Counter {
+        Counter { value: n }
     }
-    for i in 0..d {
-        curr.push(i);
-        permutation(d - i, k - 1, ans, curr);
-        curr.remove(curr.len()-1);
+
+    fn decrement(&mut self, n: usize) {
+        self.value -= n;
+    }
+
+    fn value(&self) -> usize {
+        self.value
     }
 }
+
 
 impl<'a, S: Solver> BaselineEnumerator<'a, S> {
     pub fn new(solver: &'a S, grammar: &'a S::Grammar, counterexamples: &'a [S::CounterExample]) -> Self {
@@ -79,17 +83,101 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                             _ => {}
                         }
                     }
-                    _ => eprint!("Unsupported Production Type!"),
+                    _ => eprintln!("Unsupported Production Type!"),
                 }
             } else {
-                for name in self.grammar.lhs_names() {
-                    println!("{}", name);
-                }
-                loop {
-
+                match production {
+                    GTerm::BfTerm(expr) => {
+                        let expr_vec = self.permutation(expr, &mut Counter::new(d));
+                        all_expressions.extend(expr_vec.clone());
+                    }
+                    _ => eprintln!("Unsupported Rules!")
                 }
             }
         }
+    }
+
+    fn permutation(&self, expr: &GExpr, counter: &mut Counter) -> Vec<GExpr> {
+        let mut ret= Vec::new();
+        match expr {
+            GExpr::Var(symbol, sort) => {
+                if self.grammar.lhs_names().contains(&&symbol) {
+                    for index in 0..counter.value {
+                        counter.decrement(index);
+                        let terms = self.cache.get(&(symbol.clone(), index)).unwrap();
+                        ret.extend(terms.clone());
+                        return ret;
+                    }
+                }
+            },
+            GExpr::Not(sub)
+            | GExpr::BvNot(sub)
+            | GExpr::BvNeg(sub) => {
+                let terms = self.permutation(sub, counter);
+                for t in terms.iter() {
+                    match expr {
+                        GExpr::Not(sub) => ret.push(GExpr::Not(Box::new(t.clone()))),
+                        GExpr::BvNot(sub) => ret.push(GExpr::BvNot(Box::new(t.clone()))),
+                        GExpr::BvNeg(sub) => ret.push(GExpr::BvNeg(Box::new(t.clone()))),
+                        _ => unreachable!()
+                    }
+                }
+            },
+            GExpr::And(l_sub, r_sub)
+            | GExpr::Or(l_sub, r_sub)
+            | GExpr::Xor(l_sub, r_sub)
+            | GExpr::Iff(l_sub, r_sub)
+            | GExpr::Equal(l_sub, r_sub)
+            | GExpr::BvAnd(l_sub, r_sub)
+            | GExpr::BvOr(l_sub, r_sub)
+            | GExpr::BvXor(l_sub, r_sub)
+            | GExpr::BvAdd(l_sub, r_sub)
+            | GExpr::BvMul(l_sub, r_sub)
+            | GExpr::BvSub(l_sub, r_sub)
+            | GExpr::BvUdiv(l_sub, r_sub)
+            | GExpr::BvUrem(l_sub, r_sub)
+            | GExpr::BvShl(l_sub, r_sub)
+            | GExpr::BvLshr(l_sub, r_sub)
+            | GExpr::BvUlt(l_sub, r_sub)
+            => {
+                let l_terms = self.permutation(l_sub, counter);
+                let r_terms = self.permutation(r_sub, counter);
+                for lt in l_terms.iter() {
+                    for rt in r_terms.iter() {
+                        match expr {
+                            GExpr::And(_, _) => ret.push(GExpr::And(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::Or(_, _) => ret.push(GExpr::Or(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::Xor(_, _) => ret.push(GExpr::Xor(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::Iff(_, _) => ret.push(GExpr::Iff(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::Equal(_, _) => ret.push(GExpr::Equal(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvAnd(_, _) => ret.push(GExpr::BvAnd(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvOr(_, _) => ret.push(GExpr::BvOr(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvXor(_, _) => ret.push(GExpr::BvXor(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvAdd(_, _) => ret.push(GExpr::BvAdd(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvMul(_, _) => ret.push(GExpr::BvMul(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvSub(_, _) => ret.push(GExpr::BvSub(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvUdiv(_, _) => ret.push(GExpr::BvUdiv(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvUrem(_, _) => ret.push(GExpr::BvUrem(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvShl(_, _) => ret.push(GExpr::BvShl(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvLshr(_, _) => ret.push(GExpr::BvLshr(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            GExpr::BvUlt(_, _) => ret.push(GExpr::BvUlt(Box::new(lt.clone()), Box::new(rt.clone()))),
+                            _ => unreachable!()
+                        }
+                    }
+                }
+            },
+            GExpr::ConstBool(_)
+            | GExpr::ConstInt(_)
+            | GExpr::ConstBitVec(_)
+            | GExpr::ConstString(_)
+            | GExpr::Var(_, _)
+            | GExpr::BvConst(_, _) => ret.push(expr.clone()),
+            GExpr::Let(_, _) => eprintln!("Please implement Let"),
+            GExpr::FuncApply(_, _) => eprintln!("Please implement FuncApply"),
+            GExpr::GFuncApply(_, _) => eprintln!("Please implement GFuncApply"),
+            _ => eprintln!("Unsupported: {:?}", expr)
+        }
+        ret
     }
 }
 
@@ -98,16 +186,22 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
+            println!("{:?}", self.cache);
             for non_terminal in self.grammar.non_terminals().iter().map(|p| &p.lhs) {
                 if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
                     if let Some(expr) = expressions.first() {
+                        //TODO: do something
+                        println!("{:?}", expr.to_expr());
+                        continue;
                         return Some(expr.to_expr());
                     }
                 } else {
                     self.grow(non_terminal);
                     if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
                         if let Some(expr) = expressions.first() {
-                            //let v = expr.to_expr().eval(&Default::default());
+                            println!("{:?}", expr.to_expr());
+                            //TODO: do something
+                            continue;
                             return Some(expr.to_expr());
                         }
                     }
@@ -155,40 +249,5 @@ impl Solver for BaselineSolver {
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Result<(), Self::CounterExample> {
         // TODO: Verify the expression against the constraints in the SyGuS program
         unimplemented!()
-    }
-}
-
-
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_permutation_1() {
-        let mut ans = Vec::new();
-        let mut tmp = Vec::new();
-        permutation(4,3, &mut ans, &mut tmp);
-        assert_eq!(ans,
-                   [[0, 0, 3], [0, 1, 2], [0, 2, 1], [0, 3, 0], [1, 0, 2], [1, 1, 1], [1, 2, 0], [2, 0, 1], [2, 1, 0], [3, 0, 0]]
-        )
-    }
-
-    #[test]
-    fn test_permutation_2() {
-        let mut ans = Vec::new();
-        let mut tmp = Vec::new();
-        permutation(2,2, &mut ans, &mut tmp);
-        assert_eq!(ans,
-                   [[0, 1], [1, 0]]
-        )
-    }
-
-    #[test]
-    fn test_permutation_3() {
-        let mut ans = Vec::new();
-        let mut tmp = Vec::new();
-        permutation(3,2, &mut ans, &mut tmp);
-        assert_eq!(ans,
-                   [[0, 2], [1, 1], [2, 0]]
-        )
     }
 }
