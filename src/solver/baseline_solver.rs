@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use z3::ast::Ast;
+
 use crate::parser::ast::*;
 use crate::solver::Solver;
 
@@ -84,13 +86,85 @@ impl Solver for BaselineSolver {
             }
         }
 
-        // TODO: add define_funs into solver
+        // Add define_funs into solver
+        let mut funcs: HashMap<String, z3::FuncDecl> = HashMap::new();
+        for f_name in define_funs.keys() {
+            let f_params = &define_funs[f_name].params;
+            let mut domain: Vec<z3::Sort> = Vec::new();
+            for param in f_params {
+                domain.push(match param.1 {
+                    Sort::Bool => z3::Sort::bool(&ctx),
+                    Sort::Int => z3::Sort::int(&ctx),
+                    Sort::BitVec(w) => z3::Sort::bitvector(&ctx, w as u32),
+                    Sort::String => z3::Sort::string(&ctx),
+                    _ => panic!("Unsupported sort"),
+                })
+            }
+            let domain_references: Vec<&z3::Sort> = domain.iter().collect();
 
-        // TODO: add func_name with expr into solver
+            let f_ret_sort = &define_funs[f_name].ret_sort;
+            let range = match f_ret_sort {
+                Sort::Bool => z3::Sort::bool(&ctx),
+                Sort::Int => z3::Sort::int(&ctx),
+                Sort::BitVec(w) => z3::Sort::bitvector(&ctx, *w as u32),
+                Sort::String => z3::Sort::string(&ctx),
+                _ => panic!("Unsupported sort"),
+            };
+
+            let f_body = &define_funs[f_name].body;
+            // TODO: add function body
+            let decl = z3::FuncDecl::new(&ctx, f_name.clone(), domain_references.as_slice(), &range);
+
+            funcs.insert(f_name.clone(), decl);
+        }
+
+        // TODO: add func_name with expr into solver similar to define_funcs
 
         let mut clauses: Vec<z3::ast::Bool> = Vec::new();
         for c in constraints {
-            clauses.push(self.expr_to_smt(&c, &vars, &ctx).as_bool().unwrap().not());
+            match c {
+                // assume there is at least one constraint and it's equation
+                Expr::Equal(e1, e2) => match declare_vars[declare_vars.keys().next().unwrap()] {
+                    Sort::Bool => {
+                        clauses.push(
+                            self.expr_to_smt(&e1, &vars, &funcs, &ctx)
+                                .as_bool()
+                                .unwrap()
+                                ._eq(&self.expr_to_smt(&e2, &vars, &funcs, &ctx).as_bool().unwrap())
+                                .not(),
+                        );
+                    }
+                    Sort::Int => {
+                        clauses.push(
+                            self.expr_to_smt(&e1, &vars, &funcs, &ctx)
+                                .as_int()
+                                .unwrap()
+                                ._eq(&self.expr_to_smt(&e2, &vars, &funcs, &ctx).as_int().unwrap())
+                                .not(),
+                        );
+                    }
+                    Sort::BitVec(_) => {
+                        clauses.push(
+                            self.expr_to_smt(&e1, &vars, &funcs, &ctx)
+                                .as_bv()
+                                .unwrap()
+                                ._eq(&self.expr_to_smt(&e2, &vars, &funcs, &ctx).as_bv().unwrap())
+                                .not(),
+                        );
+                    }
+                    Sort::String => {
+                        clauses.push(
+                            self.expr_to_smt(&e1, &vars, &funcs, &ctx)
+                                .as_string()
+                                .unwrap()
+                                ._eq(&self.expr_to_smt(&e2, &vars, &funcs, &ctx).as_string().unwrap())
+                                .not(),
+                        );
+                    }
+                    _ => panic!("Unsupported sort"),
+                },
+                _ => panic!("Unsupported constraint format"),
+            }
         }
         let clauses_references: Vec<&z3::ast::Bool<'_>> = clauses.iter().collect();
         solver.assert(&z3::ast::Bool::or(&ctx, clauses_references.as_slice()));
@@ -112,24 +186,29 @@ impl Solver for BaselineSolver {
         &self,
         expr: &Self::Expr,
         vars: &'ctx HashMap<String, z3::ast::Dynamic>,
+        funcs: &'ctx HashMap<String, z3::FuncDecl>,
         ctx: &'ctx z3::Context,
     ) -> Box<z3::ast::Dynamic<'ctx>> {
         macro_rules! bv_unary_operation {
-            ($expr:ident, $e:expr, $vars:expr, $ctx:expr, $method:ident) => {
+            ($expr:ident, $e:expr, $vars:expr, $funcs:expr, $ctx:expr, $method:ident) => {
                 Box::from(z3::ast::Dynamic::from(
-                    $expr.expr_to_smt($e, $vars, $ctx).as_bv().unwrap().$method(),
+                    $expr
+                        .expr_to_smt($e, $vars, $funcs, $ctx)
+                        .as_bv()
+                        .unwrap()
+                        .$method(),
                 ))
             };
         }
 
         macro_rules! bv_binary_operation {
-            ($expr:ident, $e1:expr, $e2:expr, $vars:expr, $ctx:expr, $method:ident) => {
+            ($expr:ident, $e1:expr, $e2:expr, $vars:expr, $funcs:expr, $ctx:expr, $method:ident) => {
                 Box::from(z3::ast::Dynamic::from(
                     $expr
-                        .expr_to_smt($e1, $vars, $ctx)
+                        .expr_to_smt($e1, $vars, $funcs, $ctx)
                         .as_bv()
                         .unwrap()
-                        .$method(&$expr.expr_to_smt($e2, $vars, $ctx).as_bv().unwrap()),
+                        .$method(&$expr.expr_to_smt($e2, $vars, $funcs, $ctx).as_bv().unwrap()),
                 ))
             };
         }
@@ -138,53 +217,60 @@ impl Solver for BaselineSolver {
             Expr::ConstBool(b) => Box::from(z3::ast::Dynamic::from(z3::ast::Bool::from_bool(ctx, *b))),
             Expr::ConstInt(i) => Box::from(z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, *i))),
             Expr::ConstBitVec(u) => Box::from(z3::ast::Dynamic::from(z3::ast::BV::from_u64(ctx, *u, 64))),
-            Expr::ConstString(s) => todo!(),
+            Expr::ConstString(s) => Box::from(z3::ast::Dynamic::from(z3::ast::String::from_str(ctx, s).unwrap())),
             Expr::Var(symbol, _) => Box::from(vars[symbol].clone()),
-            Expr::FuncApply(_, _) => todo!(),
+            Expr::FuncApply(name, exprs) => {
+                let mut args: Vec<z3::ast::Dynamic> = Vec::new();
+                for e in exprs {
+                    args.push(*self.expr_to_smt(e, vars, funcs, ctx));
+                }
+                let args_references: Vec<&dyn z3::ast::Ast> = args.iter().map(|arg| arg as &dyn z3::ast::Ast).collect();
+                Box::from(z3::ast::Dynamic::from(funcs[name].apply(args_references.as_slice())))
+            }
             Expr::Let(_, _) => unimplemented!("Not supporting lamdba calculus in constraints."),
             Expr::Not(e) => Box::from(z3::ast::Dynamic::from(
-                self.expr_to_smt(e, vars, ctx).as_bool().unwrap().not(),
+                self.expr_to_smt(e, vars, funcs, ctx).as_bool().unwrap().not(),
             )),
             Expr::And(e1, e2) => Box::from(z3::ast::Dynamic::from(z3::ast::Bool::and(
                 ctx,
                 &[
-                    &self.expr_to_smt(e1, vars, ctx).as_bool().unwrap(),
-                    &self.expr_to_smt(e2, vars, ctx).as_bool().unwrap(),
+                    &self.expr_to_smt(e1, vars, funcs, ctx).as_bool().unwrap(),
+                    &self.expr_to_smt(e2, vars, funcs, ctx).as_bool().unwrap(),
                 ],
             ))),
             Expr::Or(e1, e2) => Box::from(z3::ast::Dynamic::from(z3::ast::Bool::or(
                 ctx,
                 &[
-                    &self.expr_to_smt(e1, vars, ctx).as_bool().unwrap(),
-                    &self.expr_to_smt(e2, vars, ctx).as_bool().unwrap(),
+                    &self.expr_to_smt(e1, vars, funcs, ctx).as_bool().unwrap(),
+                    &self.expr_to_smt(e2, vars, funcs, ctx).as_bool().unwrap(),
                 ],
             ))),
             Expr::Xor(e1, e2) => Box::from(z3::ast::Dynamic::from(
-                self.expr_to_smt(e1, vars, ctx)
+                self.expr_to_smt(e1, vars, funcs, ctx)
                     .as_bool()
                     .unwrap()
-                    .xor(&self.expr_to_smt(e2, vars, ctx).as_bool().unwrap()),
+                    .xor(&self.expr_to_smt(e2, vars, funcs, ctx).as_bool().unwrap()),
             )),
             Expr::Iff(e1, e2) => Box::from(z3::ast::Dynamic::from(
-                self.expr_to_smt(e1, vars, ctx)
+                self.expr_to_smt(e1, vars, funcs, ctx)
                     .as_bool()
                     .unwrap()
-                    .iff(&self.expr_to_smt(e2, vars, ctx).as_bool().unwrap()),
+                    .iff(&self.expr_to_smt(e2, vars, funcs, ctx).as_bool().unwrap()),
             )),
-            Expr::Equal(_, _) => todo!(),
-            Expr::BvAnd(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvand),
-            Expr::BvOr(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvor),
-            Expr::BvXor(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvxor),
-            Expr::BvNot(e) => bv_unary_operation!(self, e, vars, ctx, bvnot),
-            Expr::BvAdd(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvadd),
-            Expr::BvMul(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvmul),
-            Expr::BvSub(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvsub),
-            Expr::BvUdiv(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvudiv),
-            Expr::BvUrem(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvurem),
-            Expr::BvShl(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvshl),
-            Expr::BvLshr(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvlshr),
-            Expr::BvNeg(e) => bv_unary_operation!(self, e, vars, ctx, bvneg),
-            Expr::BvUlt(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvult),
+            Expr::Equal(e1, e2) => unreachable!(), // handled before reaching here
+            Expr::BvAnd(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvand),
+            Expr::BvOr(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvor),
+            Expr::BvXor(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvxor),
+            Expr::BvNot(e) => bv_unary_operation!(self, e, vars, funcs, ctx, bvnot),
+            Expr::BvAdd(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvadd),
+            Expr::BvMul(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvmul),
+            Expr::BvSub(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvsub),
+            Expr::BvUdiv(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvudiv),
+            Expr::BvUrem(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvurem),
+            Expr::BvShl(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvshl),
+            Expr::BvLshr(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvlshr),
+            Expr::BvNeg(e) => bv_unary_operation!(self, e, vars, funcs, ctx, bvneg),
+            Expr::BvUlt(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvult),
             Expr::BvConst(v, width) => Box::from(z3::ast::Dynamic::from(z3::ast::BV::from_u64(
                 ctx,
                 *v as u64,
