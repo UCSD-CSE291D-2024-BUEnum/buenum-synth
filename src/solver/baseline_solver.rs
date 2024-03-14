@@ -114,6 +114,26 @@ impl Solver for BaselineSolver {
         vars: &'ctx HashMap<String, z3::ast::Dynamic>,
         ctx: &'ctx z3::Context,
     ) -> Box<z3::ast::Dynamic<'ctx>> {
+        macro_rules! bv_unary_operation {
+            ($expr:ident, $e:expr, $vars:expr, $ctx:expr, $method:ident) => {
+                Box::from(z3::ast::Dynamic::from(
+                    $expr.expr_to_smt($e, $vars, $ctx).as_bv().unwrap().$method(),
+                ))
+            };
+        }
+
+        macro_rules! bv_binary_operation {
+            ($expr:ident, $e1:expr, $e2:expr, $vars:expr, $ctx:expr, $method:ident) => {
+                Box::from(z3::ast::Dynamic::from(
+                    $expr
+                        .expr_to_smt($e1, $vars, $ctx)
+                        .as_bv()
+                        .unwrap()
+                        .$method(&$expr.expr_to_smt($e2, $vars, $ctx).as_bv().unwrap()),
+                ))
+            };
+        }
+
         match expr {
             Expr::ConstBool(b) => Box::from(z3::ast::Dynamic::from(z3::ast::Bool::from_bool(ctx, *b))),
             Expr::ConstInt(i) => Box::from(z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, *i))),
@@ -152,19 +172,19 @@ impl Solver for BaselineSolver {
                     .iff(&self.expr_to_smt(e2, vars, ctx).as_bool().unwrap()),
             )),
             Expr::Equal(_, _) => todo!(),
-            Expr::BvAnd(_, _) => todo!(),
-            Expr::BvOr(_, _) => todo!(),
-            Expr::BvXor(_, _) => todo!(),
-            Expr::BvNot(_) => todo!(),
-            Expr::BvAdd(_, _) => todo!(),
-            Expr::BvMul(_, _) => todo!(),
-            Expr::BvSub(_, _) => todo!(),
-            Expr::BvUdiv(_, _) => todo!(),
-            Expr::BvUrem(_, _) => todo!(),
-            Expr::BvShl(_, _) => todo!(),
-            Expr::BvLshr(_, _) => todo!(),
-            Expr::BvNeg(_) => todo!(),
-            Expr::BvUlt(_, _) => todo!(),
+            Expr::BvAnd(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvand),
+            Expr::BvOr(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvor),
+            Expr::BvXor(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvxor),
+            Expr::BvNot(e) => bv_unary_operation!(self, e, vars, ctx, bvnot),
+            Expr::BvAdd(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvadd),
+            Expr::BvMul(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvmul),
+            Expr::BvSub(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvsub),
+            Expr::BvUdiv(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvudiv),
+            Expr::BvUrem(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvurem),
+            Expr::BvShl(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvshl),
+            Expr::BvLshr(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvlshr),
+            Expr::BvNeg(e) => bv_unary_operation!(self, e, vars, ctx, bvneg),
+            Expr::BvUlt(e1, e2) => bv_binary_operation!(self, e1, e2, vars, ctx, bvult),
             Expr::BvConst(v, width) => Box::from(z3::ast::Dynamic::from(z3::ast::BV::from_u64(
                 ctx,
                 *v as u64,
