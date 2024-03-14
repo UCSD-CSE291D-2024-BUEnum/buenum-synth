@@ -4,6 +4,7 @@ pub mod egg_solver;
 use std::cell::RefCell;
 
 use crate::parser::ast;
+use crate::parser::ast::ProdName;
 
 pub trait Solver {
     type Prog: ProgTrait;
@@ -70,10 +71,20 @@ impl ProgTrait for ast::SyGuSProg {
 
 pub trait GrammarTrait {
     fn non_terminals(&self) -> &[ast::Production];
+
+    fn lhs_names(&self) -> Vec<&ProdName>;
 }
 
 impl GrammarTrait for ast::GrammarDef {
     fn non_terminals(&self) -> &[ast::Production] {
         &self.non_terminals
+    }
+
+    fn lhs_names(&self) -> Vec<&ProdName> {
+        let mut names = Vec::<&ProdName>::new();
+        for prod in self.non_terminals.iter() {
+            names.push(&prod.lhs);
+        }
+        names
     }
 }

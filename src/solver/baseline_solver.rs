@@ -25,6 +25,21 @@ pub struct BaselineEnumerator<'a, S: Solver> {
     current_size: usize,
 }
 
+// d: enumeration depth, k: number of non-terminals in rhs
+pub fn permutation(d: i32, k: i32, ans: &mut Vec<Vec<i32>>, curr: &mut Vec<i32>){
+    if k == 0 {
+        if d == 1 {
+            ans.push(curr.clone());
+        }
+        return;
+    }
+    for i in 0..d {
+        curr.push(i);
+        permutation(d - i, k - 1, ans, curr);
+        curr.remove(curr.len()-1);
+    }
+}
+
 impl<'a, S: Solver> BaselineEnumerator<'a, S> {
     pub fn new(solver: &'a S, grammar: &'a S::Grammar, counterexamples: &'a [S::CounterExample]) -> Self {
         BaselineEnumerator {
@@ -67,7 +82,12 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                     _ => eprint!("Unsupported Production Type!"),
                 }
             } else {
-                // TODO: new terms
+                for name in self.grammar.lhs_names() {
+                    println!("{}", name);
+                }
+                loop {
+
+                }
             }
         }
     }
@@ -87,6 +107,7 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
                     self.grow(non_terminal);
                     if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
                         if let Some(expr) = expressions.first() {
+                            //let v = expr.to_expr().eval(&Default::default());
                             return Some(expr.to_expr());
                         }
                     }
@@ -127,11 +148,27 @@ impl Solver for BaselineSolver {
 
     fn extract_constraint(&self, p: &Self::Prog) -> &Self::Constraint {
         // TODO: Extract the constraint from the SyGuS program
+        let constraints = &p.constraints;
         unimplemented!()
     }
 
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Result<(), Self::CounterExample> {
         // TODO: Verify the expression against the constraints in the SyGuS program
         unimplemented!()
+    }
+}
+
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_permutation_1() {
+        let mut ans = Vec::new();
+        let mut tmp = Vec::new();
+        permutation(4,3, &mut ans, &mut tmp);
+        assert_eq!(ans,
+                   [[0, 0, 3], [0, 1, 2], [0, 2, 1], [0, 3, 0], [1, 0, 2], [1, 1, 1], [1, 2, 0], [2, 0, 1], [2, 1, 0], [3, 0, 0]]
+        )
     }
 }
