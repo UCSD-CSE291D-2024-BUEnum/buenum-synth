@@ -35,11 +35,31 @@ impl Counter {
     }
 
     fn decrement(&mut self, n: usize) {
+        // println!("v = {}, n = {}", self.value, n);
         self.value -= n;
+    }
+
+    fn set(&mut self, n: usize) {
+        self.value = n;
     }
 
     fn value(&self) -> usize {
         self.value
+    }
+}
+
+/// DFS to search all the possible depth combination of sub non-terminals
+pub fn depth_of_subs(d: usize, k: usize, ans: &mut Vec<Vec<usize>>, curr: &mut Vec<usize>){
+    if k == 0 {
+        if d == 1 {
+            ans.push(curr.clone());
+        }
+        return;
+    }
+    for i in 0..d {
+        curr.push(i);
+        depth_of_subs(d - i, k - 1, ans, curr);
+        curr.remove(curr.len()-1);
     }
 }
 
@@ -102,11 +122,53 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
         match expr {
             GExpr::Var(symbol, sort) => {
                 if self.grammar.lhs_names().contains(&&symbol) {
-                    for index in 0..counter.value {
+                    let init = counter.value;
+                    for index in 0..init {
+                        counter.set(init);
                         counter.decrement(index);
                         let terms = self.cache.get(&(symbol.clone(), index)).unwrap();
                         ret.extend(terms.clone());
                         return ret;
+                    }
+                }
+            },
+            GExpr::FuncApply(funcName, subs)
+            | GExpr::GFuncApply(funcName, subs)=> {
+                let len = subs.len();
+                let init = counter.value;
+                for index in 0..init {
+                    counter.set(init);
+                    //println!("v = {}, n = {}", counter.value, index);
+                    counter.decrement(index);
+                    let mut depths = Vec::new();
+                    depth_of_subs(index, len, &mut depths, &mut Vec::new());
+
+                    let mut terms_vec = Vec::new();
+                    for sub in subs {
+                        // Here retrieve all the possible terms of each sub.
+                        let terms = self.permutation(sub, counter);
+                        terms_vec.push(terms);
+                    }
+
+                    let mut result = vec![vec![]];
+                    for t in terms_vec {
+                        let mut temp = Vec::new();
+                        for acc_elem in &result {
+                            for new_elem in &t {
+                                let mut new_vec = acc_elem.clone();
+                                new_vec.push(new_elem.clone());
+                                temp.push(new_vec);
+                            }
+                        }
+                        result = temp;
+                    }
+
+                    for res in result {
+                        match expr {
+                            GExpr::FuncApply(_, _) => ret.push(GExpr::FuncApply(funcName.clone(), res.clone())),
+                            GExpr::GFuncApply(_, _) => ret.push(GExpr::GFuncApply(funcName.clone(), res.clone())),
+                            _ => unreachable!()
+                        }
                     }
                 }
             },
@@ -173,7 +235,6 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             | GExpr::Var(_, _)
             | GExpr::BvConst(_, _) => ret.push(expr.clone()),
             GExpr::Let(_, _) => eprintln!("Please implement Let"),
-            GExpr::FuncApply(_, _) => eprintln!("Please implement FuncApply"),
             GExpr::GFuncApply(_, _) => eprintln!("Please implement GFuncApply"),
             _ => eprintln!("Unsupported: {:?}", expr)
         }
@@ -249,5 +310,40 @@ impl Solver for BaselineSolver {
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Result<(), Self::CounterExample> {
         // TODO: Verify the expression against the constraints in the SyGuS program
         unimplemented!()
+    }
+}
+
+
+mod tests {
+    use super::depth_of_subs;
+
+    #[test]
+    fn test_permutation_1() {
+        let mut ans = Vec::new();
+        let mut tmp = Vec::new();
+        depth_of_subs(4,3, &mut ans, &mut tmp);
+        assert_eq!(ans,
+                   [[0, 0, 3], [0, 1, 2], [0, 2, 1], [0, 3, 0], [1, 0, 2], [1, 1, 1], [1, 2, 0], [2, 0, 1], [2, 1, 0], [3, 0, 0]]
+        )
+    }
+
+    #[test]
+    fn test_permutation_2() {
+        let mut ans = Vec::new();
+        let mut tmp = Vec::new();
+        depth_of_subs(2,2, &mut ans, &mut tmp);
+        assert_eq!(ans,
+                   [[0, 1], [1, 0]]
+        )
+    }
+
+    #[test]
+    fn test_permutation_3() {
+        let mut ans = Vec::new();
+        let mut tmp = Vec::new();
+        depth_of_subs(3,2, &mut ans, &mut tmp);
+        assert_eq!(ans,
+                   [[0, 2], [1, 1], [2, 0]]
+        )
     }
 }
