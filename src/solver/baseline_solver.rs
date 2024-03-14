@@ -171,4 +171,24 @@ mod tests {
                    [[0, 0, 3], [0, 1, 2], [0, 2, 1], [0, 3, 0], [1, 0, 2], [1, 1, 1], [1, 2, 0], [2, 0, 1], [2, 1, 0], [3, 0, 0]]
         )
     }
+
+    #[test]
+    fn test_permutation_2() {
+        let mut ans = Vec::new();
+        let mut tmp = Vec::new();
+        permutation(2,2, &mut ans, &mut tmp);
+        assert_eq!(ans,
+                   [[0, 1], [1, 0]]
+        )
+    }
+
+    #[test]
+    fn test_permutation_3() {
+        let mut ans = Vec::new();
+        let mut tmp = Vec::new();
+        permutation(3,2, &mut ans, &mut tmp);
+        assert_eq!(ans,
+                   [[0, 2], [1, 1], [2, 0]]
+        )
+    }
 }
