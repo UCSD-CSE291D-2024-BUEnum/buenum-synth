@@ -6,6 +6,8 @@ use std::cell::RefCell;
 use crate::parser::ast;
 use crate::parser::ast::ProdName;
 
+use std::collections::HashMap;
+
 pub trait Solver {
     type Prog: ProgTrait;
     type Expr;
@@ -22,9 +24,15 @@ pub trait Solver {
 
     fn extract_grammar<'a>(&'a self, p: &'a Self::Prog, func_name: &str) -> &Self::Grammar;
 
-    fn extract_constraint(&self, p: &Self::Prog) -> &Self::Constraint;
+    fn extract_constraint(&self, p: &Self::Prog) -> Self::Constraint;
 
-    fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Result<(), Self::CounterExample>;
+    fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Option<Self::CounterExample>;
+
+    fn expr_to_smt<'ctx>(&self, expr: &Self::Expr, vars: &'ctx HashMap<String, z3::ast::Dynamic>, funcs: &'ctx HashMap<String, z3::RecFuncDecl>, ctx: &'ctx z3::Context) -> Box<z3::ast::Dynamic<'ctx>>;
+
+    // fn expr_to_smt<'a>(&'a self, expr: &Self::Expr, vars: &Vec<String>, ctx: &'a z3::Context) -> Box<dyn z3::ast::Ast<'a> + 'a>;
+
+    // fn z3_ast_to_z3_bool(&self, ast: Box<dyn z3::ast::Ast>) -> Box<z3::ast::Bool>;
 
     fn synthesize(&self, p: &Self::Prog, func_name: &str) -> Option<Self::Expr> {
         let counterexamples: RefCell<Vec<Self::CounterExample>> = RefCell::new(Vec::new()); // we need to use RefCell because we cannot decide the reference lifetime statically
@@ -37,8 +45,8 @@ pub trait Solver {
 
             while let Some(expr) = candidates.next() {
                 match self.verify(p, func_name, &expr) {
-                    Ok(()) => return Some(expr),
-                    Err(cex) => counterexamples.borrow_mut().push(cex)
+                    None => return Some(expr),
+                    Some(cex) => counterexamples.borrow_mut().push(cex)
                 }
             }
             if counterexamples.borrow().is_empty() {

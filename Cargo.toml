@@ -17,8 +17,8 @@ pest = "2.7.7"        # Parser Generator
 pest_derive = "2.7.7"
 strum = "0.26"        # Enum utils (to iter())
 strum_macros = "0.26"
-#z3 = "0.12.0"         # SMT Solver
-#z3-sys = "=0.8.1"
+z3 = "0.12.0"         # SMT Solver
+z3-sys = "=0.8.1"
 #
 #[build-dependencies]
 #z3-sys = "=0.8.1"
