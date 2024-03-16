@@ -663,8 +663,8 @@ mod tests {
                     panic!("Error parsing file: {}\nError: {:#?}", filename, e);
                 }
             };
-            dbg!(format!("{:?}", res));
-            // panic!("{:#?}", res);
+            // dbg!(format!("{:?}", res));
+            panic!("{:#?}", res);
             // panic!("{:?}", res);
         };
     }
@@ -732,6 +732,11 @@ mod tests {
     #[test]
     fn visit_multiple_functions_polynomial1() {
         check_parse_tree!(format!("benchmarks/multiple-functions/polynomial1.sl"));
+    }
+
+    #[test]
+    fn visit_multiple_functions_icfp() {
+        check_parse_tree!(format!("benchmarks/icfp_benchmarks/icfp-problems/5_1000.sl"));
     }
     // Not implemented yet
     // #[test]

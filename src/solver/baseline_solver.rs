@@ -1,9 +1,11 @@
 use crate::solver::ast::GTerm;
 use std::collections::HashMap;
+use std::ptr::null;
 
 use z3::ast::Ast;
 
 use crate::parser::ast::*;
+use crate::parser::ast::Expr::Var;
 use crate::solver::GrammarTrait;
 use crate::solver::Solver;
 
@@ -65,6 +67,19 @@ pub fn depth_of_subs(d: usize, k: usize, ans: &mut Vec<Vec<usize>>, curr: &mut V
     }
 }
 
+fn argument(term_vec: &Vec<Vec<GExpr>>, visited: &Vec<Vec<bool>>, i: usize, curr: &mut Vec<GExpr>, ret: &mut Vec<Vec<GExpr>>){
+    if i == term_vec.len() {
+        ret.push(curr.clone());
+    } else {
+        for j in 0..term_vec[i].len() {
+            if !visited[i][j] {
+                curr.push((&term_vec[i][j]).clone());
+                argument(term_vec, visited, i+1, curr, ret);
+                curr.remove(curr.len()-1);
+            }
+        }
+    }
+}
 
 impl<'a, S: Solver> BaselineEnumerator<'a, S> {
     pub fn new(solver: &'a S, grammar: &'a S::Grammar, counterexamples: &'a [S::CounterExample]) -> Self {
@@ -85,7 +100,6 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             self.cache.entry((non_terminal.clone(), size)).or_insert(generated_terms);
         }
     }
-
 
     fn terms(&self, productions: &Production, d: usize, all_expressions: &mut Vec<GExpr>) {
         let lhs = &productions.lhs;
@@ -110,7 +124,7 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             } else {
                 match production {
                     GTerm::BfTerm(expr) => {
-                        let expr_vec = self.permutation(expr, &mut Counter::new(d));
+                        let expr_vec = self.permutation(lhs, expr, &GExpr::UnknownGExpr, d);
                         all_expressions.extend(expr_vec.clone());
                     }
                     _ => eprintln!("Unsupported Rules!")
@@ -119,66 +133,75 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
         }
     }
 
-    fn permutation(&self, expr: &GExpr, counter: &mut Counter) -> Vec<GExpr> {
-        let mut ret= Vec::new();
+    fn permutation(&self, prod_name: &ProdName, expr: &GExpr, father: &GExpr, d: usize) -> Vec<GExpr> {
+        let mut ret: Vec<GExpr>= Vec::new();
+        if d == 0 {
+            ret.extend(self.cache.get(&(prod_name.clone(), 0)).unwrap().clone());
+            return ret;
+        }
         match expr {
             GExpr::Var(symbol, sort) => {
                 if self.grammar.lhs_names().contains(&&symbol) {
-                    let init = counter.value;
-                    for index in 0..init {
-                        counter.set(init);
-                        counter.decrement(index);
-                        let terms = self.cache.get(&(symbol.clone(), index)).unwrap();
-                        ret.extend(terms.clone());
-                        return ret;
+                    if let Some(productions) = self.grammar.non_terminals().iter().find(|p| p.lhs == *symbol) {
+                        let lhs = &productions.lhs;
+                        for prod in &productions.rhs {
+                            match father {
+                                GExpr::Var(name, ..) => {
+                                    if name == symbol {
+                                        return ret;
+                                    }
+                                },
+                                _ => {
+                                    match prod {
+                                        GTerm::BfTerm(e) => ret.extend(self.permutation(lhs, e, expr, d).clone()),
+                                        _ => unreachable!()
+                                    }
+                                }
+                            }
+                        }
                     }
+                } else {
+                    //TODO: do something
                 }
             },
             GExpr::FuncApply(funcName, subs)
             | GExpr::GFuncApply(funcName, subs)=> {
                 let len = subs.len();
-                let init = counter.value;
-                for index in 0..init {
-                    counter.set(init);
-                    //println!("v = {}, n = {}", counter.value, index);
-                    counter.decrement(index);
-                    let mut depths = Vec::new();
-                    depth_of_subs(index, len, &mut depths, &mut Vec::new());
+                let mut depth = Vec::new();
+                depth_of_subs(d, len, &mut depth, &mut Vec::new());
 
+                let mut final_res = Vec::new();
+                for d_i in depth {
                     let mut terms_vec = Vec::new();
-                    for sub in subs {
-                        // Here retrieve all the possible terms of each sub.
-                        let terms = self.permutation(sub, counter);
-                        terms_vec.push(terms);
+                    let mut visited = Vec::new();
+                    for k in 0..len {
+                        let permutation_result = self.permutation(prod_name, &subs[k], expr, d_i[k]);
+                        terms_vec.push(permutation_result.clone());
+                        let curr_visited = vec![false; (&permutation_result).len()];
+                        visited.push(curr_visited);
                     }
 
-                    let mut result = vec![vec![]];
-                    for t in terms_vec {
-                        let mut temp = Vec::new();
-                        for acc_elem in &result {
-                            for new_elem in &t {
-                                let mut new_vec = acc_elem.clone();
-                                new_vec.push(new_elem.clone());
-                                temp.push(new_vec);
-                            }
-                        }
-                        result = temp;
-                    }
+                    let mut result = Vec::new();
+                    argument(&terms_vec, &visited, 0, &mut Vec::new(), &mut result);
 
-                    for res in result {
-                        match expr {
-                            GExpr::FuncApply(_, _) => ret.push(GExpr::FuncApply(funcName.clone(), res.clone())),
-                            GExpr::GFuncApply(_, _) => ret.push(GExpr::GFuncApply(funcName.clone(), res.clone())),
-                            _ => unreachable!()
-                        }
+                    final_res.extend(result);
+                }
+
+
+                for res in final_res {
+                    match expr {
+                        GExpr::FuncApply(_, _) => ret.push(GExpr::FuncApply(funcName.clone(), res.clone())),
+                        GExpr::GFuncApply(_, _) => ret.push(GExpr::GFuncApply(funcName.clone(), res.clone())),
+                        _ => unreachable!()
                     }
                 }
             },
             GExpr::Not(sub)
             | GExpr::BvNot(sub)
             | GExpr::BvNeg(sub) => {
-                let terms = self.permutation(sub, counter);
+                let terms = self.permutation(prod_name, sub, expr, d-1);
                 for t in terms.iter() {
+                    //println!("{:?}", t);
                     match expr {
                         GExpr::Not(sub) => ret.push(GExpr::Not(Box::new(t.clone()))),
                         GExpr::BvNot(sub) => ret.push(GExpr::BvNot(Box::new(t.clone()))),
@@ -204,28 +227,33 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             | GExpr::BvLshr(l_sub, r_sub)
             | GExpr::BvUlt(l_sub, r_sub)
             => {
-                let l_terms = self.permutation(l_sub, counter);
-                let r_terms = self.permutation(r_sub, counter);
-                for lt in l_terms.iter() {
-                    for rt in r_terms.iter() {
-                        match expr {
-                            GExpr::And(_, _) => ret.push(GExpr::And(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::Or(_, _) => ret.push(GExpr::Or(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::Xor(_, _) => ret.push(GExpr::Xor(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::Iff(_, _) => ret.push(GExpr::Iff(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::Equal(_, _) => ret.push(GExpr::Equal(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvAnd(_, _) => ret.push(GExpr::BvAnd(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvOr(_, _) => ret.push(GExpr::BvOr(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvXor(_, _) => ret.push(GExpr::BvXor(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvAdd(_, _) => ret.push(GExpr::BvAdd(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvMul(_, _) => ret.push(GExpr::BvMul(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvSub(_, _) => ret.push(GExpr::BvSub(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvUdiv(_, _) => ret.push(GExpr::BvUdiv(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvUrem(_, _) => ret.push(GExpr::BvUrem(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvShl(_, _) => ret.push(GExpr::BvShl(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvLshr(_, _) => ret.push(GExpr::BvLshr(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            GExpr::BvUlt(_, _) => ret.push(GExpr::BvUlt(Box::new(lt.clone()), Box::new(rt.clone()))),
-                            _ => unreachable!()
+                let mut depth = Vec::new();
+                depth_of_subs(d, 2, &mut depth, &mut Vec::new());
+                for d_i in depth {
+                    let l_terms = self.permutation(prod_name, l_sub, expr, d_i[0]);
+                    let r_terms = self.permutation(prod_name, r_sub, expr, d_i[1]);
+
+                    for lt in l_terms.iter() {
+                        for rt in r_terms.iter() {
+                            match expr {
+                                GExpr::And(_, _) => ret.push(GExpr::And(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::Or(_, _) => ret.push(GExpr::Or(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::Xor(_, _) => ret.push(GExpr::Xor(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::Iff(_, _) => ret.push(GExpr::Iff(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::Equal(_, _) => ret.push(GExpr::Equal(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvAnd(_, _) => ret.push(GExpr::BvAnd(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvOr(_, _) => ret.push(GExpr::BvOr(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvXor(_, _) => ret.push(GExpr::BvXor(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvAdd(_, _) => ret.push(GExpr::BvAdd(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvMul(_, _) => ret.push(GExpr::BvMul(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvSub(_, _) => ret.push(GExpr::BvSub(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvUdiv(_, _) => ret.push(GExpr::BvUdiv(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvUrem(_, _) => ret.push(GExpr::BvUrem(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvShl(_, _) => ret.push(GExpr::BvShl(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvLshr(_, _) => ret.push(GExpr::BvLshr(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::BvUlt(_, _) => ret.push(GExpr::BvUlt(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                _ => unreachable!()
+                            }
                         }
                     }
                 }
@@ -235,10 +263,16 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             | GExpr::ConstBitVec(_)
             | GExpr::ConstString(_)
             | GExpr::Var(_, _)
-            | GExpr::BvConst(_, _) => ret.push(expr.clone()),
+            | GExpr::BvConst(_, _) => {},
             GExpr::Let(_, _) => eprintln!("Please implement Let"),
-            GExpr::GFuncApply(_, _) => eprintln!("Please implement GFuncApply"),
             _ => eprintln!("Unsupported: {:?}", expr)
+        }
+
+        if d == 2 {
+            println!("\nHere is the result of {:?}, when d = {}!", expr, d);
+            for e in &ret {
+                println!("{:?}", e);
+            }
         }
         ret
     }
@@ -249,24 +283,29 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            println!("{:?}", self.cache);
+            //println!("{:?}", self.cache);
             for non_terminal in self.grammar.non_terminals().iter().map(|p| &p.lhs) {
                 if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
                     if let Some(expr) = expressions.first() {
                         //TODO: do something
-                        println!("{:?}", expr.to_expr());
+                        println!("{:?}", expressions);
                         continue;
                         return Some(expr.to_expr());
                     }
                 } else {
                     self.grow(non_terminal);
                     if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                        if let Some(expr) = expressions.first() {
-                            println!("{:?}", expr.to_expr());
-                            //TODO: do something
-                            continue;
-                            return Some(expr.to_expr());
+                        println!("\nthis is iter-{}", self.current_size);
+                        for expr in expressions {
+                            //println!("{:?}", expr)
                         }
+                        // if let Some(expr) = expressions.first() {
+                        //     println!("{:?}", expressions);
+                        //
+                        //     //TODO: do something
+                        //     continue;
+                        //     return Some(expr.to_expr());
+                        // }
                     }
                 }
             }
