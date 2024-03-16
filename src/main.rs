@@ -19,9 +19,9 @@ fn main() {
     let binding = Vec::new();
     let mut enumerator = solver::Solver::enumerate(&solver, &grammar, binding.as_slice());
     while let Some(item) = enumerator.next() {
-        println!("Hello")
+        println!("Hello");
         //println!("{:?}", item);
-        //sleep(Duration::from_secs(10));
+        sleep(Duration::from_secs(10));
         //break
     }
 }

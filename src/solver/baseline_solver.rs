@@ -1,6 +1,8 @@
 use crate::solver::ast::GTerm;
 use std::collections::HashMap;
 use std::ptr::null;
+use std::thread::sleep;
+use std::time::Duration;
 
 use z3::ast::Ast;
 
@@ -175,7 +177,18 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                     let mut terms_vec = Vec::new();
                     let mut visited = Vec::new();
                     for k in 0..len {
-                        let permutation_result = self.permutation(prod_name, &subs[k], expr, d_i[k]);
+                        let mut permutation_result = Vec::new();
+                        match &subs[k] {
+                            GExpr::Var(symbol, _) => {
+                                if self.grammar.lhs_names().contains(&symbol) {
+                                    permutation_result.extend(self.cache.get(&(symbol.clone(), d_i[k])).unwrap().clone())
+                                } else {
+                                    permutation_result.push(subs[k].clone())
+                                }
+                            }
+                            _ => eprintln!("There are multiple op in RHS!")
+                        }
+
                         terms_vec.push(permutation_result.clone());
                         let curr_visited = vec![false; (&permutation_result).len()];
                         visited.push(curr_visited);
@@ -268,12 +281,10 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             _ => eprintln!("Unsupported: {:?}", expr)
         }
 
-        if d == 2 {
-            println!("\nHere is the result of {:?}, when d = {}!", expr, d);
-            for e in &ret {
-                println!("{:?}", e);
-            }
-        }
+        // println!("\nHere is the result of {:?}, when d = {}!", expr, d);
+        // for e in &ret {
+        //     println!("{:?}", e);
+        // }
         ret
     }
 }
@@ -296,8 +307,9 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
                     self.grow(non_terminal);
                     if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
                         println!("\nthis is iter-{}", self.current_size);
+                        sleep(Duration::from_secs(10));
                         for expr in expressions {
-                            //println!("{:?}", expr)
+                            println!("{:?}", expr)
                         }
                         // if let Some(expr) = expressions.first() {
                         //     println!("{:?}", expressions);
