@@ -7,6 +7,8 @@ use crate::parser::ast::*;
 use crate::solver::GrammarTrait;
 use crate::solver::Solver;
 
+use super::ProgTrait;
+
 pub struct BaselineSolver;
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -312,7 +314,6 @@ impl Solver for BaselineSolver {
         let constraints = self.extract_constraint(p).constraints;
         let declare_vars = p.declare_var.clone();
         let define_funs = p.define_fun.clone();
-        // if any neg(cond) is sat, return the assignment as counter-example
 
         let cfg = z3::Config::new();
         let ctx = z3::Context::new(&cfg);
@@ -351,38 +352,41 @@ impl Solver for BaselineSolver {
         }
 
         // Add define_funs into solver
-        let mut funcs: HashMap<String, z3::RecFuncDecl> = HashMap::new();
+        let mut funcs: HashMap<String, z3::FuncDecl> = HashMap::new();
         for f_name in define_funs.keys() {
+            // function declaration
             let f_params = &define_funs[f_name].params;
             let mut domain: Vec<z3::Sort> = Vec::new();
             for param in f_params {
-                domain.push(match param.1 {
-                    Sort::Bool => z3::Sort::bool(&ctx),
-                    Sort::Int => z3::Sort::int(&ctx),
-                    Sort::BitVec(w) => z3::Sort::bitvector(&ctx, w as u32),
-                    Sort::String => z3::Sort::string(&ctx),
-                    _ => panic!("Unsupported sort"),
-                })
+                domain.push(self.sort_to_z3_sort(&param.1, &ctx));
             }
             let domain_references: Vec<&z3::Sort> = domain.iter().collect();
-
             let f_ret_sort = &define_funs[f_name].ret_sort;
-            let range = match f_ret_sort {
-                Sort::Bool => z3::Sort::bool(&ctx),
-                Sort::Int => z3::Sort::int(&ctx),
-                Sort::BitVec(w) => z3::Sort::bitvector(&ctx, *w as u32),
-                Sort::String => z3::Sort::string(&ctx),
-                _ => panic!("Unsupported sort"),
-            };
+            let decl = z3::FuncDecl::new(&ctx, f_name.clone(), domain_references.as_slice(), &self.sort_to_z3_sort(f_ret_sort, &ctx));
 
+            // add function definition into solver
+            let mut args = Vec::new();
+            for param in f_params {
+                args.push(&vars[&param.0]);
+            }
+            let args_references: Vec<&dyn z3::ast::Ast> = args.iter().map(|&arg| arg as &dyn z3::ast::Ast).collect();
             let f_body = &define_funs[f_name].body;
-            let decl = z3::RecFuncDecl::new(&ctx, f_name.clone(), domain_references.as_slice(), &range);
-            //TODO: add function body
+            solver.assert(&decl.apply(args_references.as_slice())._eq(&(*self.expr_to_smt(&f_body, &vars, &funcs, &ctx))));
+
+            // bookkeeping function declaration
             funcs.insert(f_name.clone(), decl);
         }
 
-        // TODO: add func_name with expr into solver similar to define_funcs
+        // add func_name with expr into solver
+        let syn_func = p.get_synth_func(func_name).unwrap().0;
+        let params = &syn_func.params;
+        let domain: Vec<z3::Sort> = params.iter().map(|(_, sort)| self.sort_to_z3_sort(sort, &ctx)).collect();
+        let domain_references: Vec<&z3::Sort> = domain.iter().collect();
+        let ret_sort = self.sort_to_z3_sort(&p.get_synth_func(func_name).unwrap().0.ret_sort, &ctx);
+        let decl = z3::FuncDecl::new(&ctx, func_name.to_string(), domain_references.as_slice(), &ret_sort);
 
+        // add constraint clauses with disjunction of neg(constraint)
+        // if any neg(constraint) is sat, a counter-example is found
         let mut clauses: Vec<z3::ast::Bool> = Vec::new();
         for c in constraints {
             match c {
@@ -433,9 +437,9 @@ impl Solver for BaselineSolver {
         solver.assert(&z3::ast::Bool::or(&ctx, clauses_references.as_slice()));
 
         match solver.check() {
-            z3::SatResult::Unsat => None,
+            z3::SatResult::Unsat => None, // no counter-example found
             z3::SatResult::Unknown => panic!("Unknown z3 solver result"),
-            z3::SatResult::Sat => {
+            z3::SatResult::Sat => { // return value assignment where at least one of the constraints is violated
                 let model = solver.get_model().unwrap();
                 let mut assignment: HashMap<String, Expr> = HashMap::new();
                 for (name, sort) in declare_vars {
@@ -462,7 +466,7 @@ impl Solver for BaselineSolver {
         &self,
         expr: &Self::Expr,
         vars: &'ctx HashMap<String, z3::ast::Dynamic>,
-        funcs: &'ctx HashMap<String, z3::RecFuncDecl>,
+        funcs: &'ctx HashMap<String, z3::FuncDecl>,
         ctx: &'ctx z3::Context,
     ) -> Box<z3::ast::Dynamic<'ctx>> {
         macro_rules! bv_unary_operation {
@@ -553,6 +557,16 @@ impl Solver for BaselineSolver {
                 *width as u32,
             ))),
             Expr::UnknownExpr => panic!("Unknown expression"),
+        }
+    }
+
+    fn sort_to_z3_sort<'ctx>(&self, sort: &Sort, ctx: &'ctx z3::Context) -> z3::Sort<'ctx> {
+        match sort {
+            Sort::Bool => z3::Sort::bool(ctx),
+            Sort::Int => z3::Sort::int(ctx),
+            Sort::BitVec(w) => z3::Sort::bitvector(ctx, *w as u32),
+            Sort::String => z3::Sort::string(ctx),
+            _ => panic!("Unsupported sort"),
         }
     }
 }
