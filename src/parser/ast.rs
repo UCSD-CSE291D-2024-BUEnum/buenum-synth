@@ -41,7 +41,7 @@ pub struct SynthFun {
     pub ret_sort: Sort
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, PartialOrd, Eq, Ord, Hash)]
 pub enum Sort {
     Bool,
     Int,
