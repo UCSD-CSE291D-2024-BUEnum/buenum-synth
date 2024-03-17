@@ -435,6 +435,13 @@ impl Solver for BaselineSolver {
         let domain_references: Vec<&z3::Sort> = domain.iter().collect();
         let ret_sort = self.sort_to_z3_sort(&p.get_synth_func(func_name).unwrap().0.ret_sort, &ctx);
         let decl = z3::FuncDecl::new(&ctx, func_name.to_string(), domain_references.as_slice(), &ret_sort);
+        let mut args = Vec::new();
+        for param in params {
+            args.push(&vars[&param.0]);
+        }
+        let args_references: Vec<&dyn z3::ast::Ast> = args.iter().map(|&arg| arg as &dyn z3::ast::Ast).collect();
+        solver.assert(&decl.apply(args_references.as_slice())._eq(&(*self.expr_to_smt(expr, &vars, &funcs, &ctx))));
+        funcs.insert(func_name.to_string(), decl);
 
         // add constraint clauses with disjunction of neg(constraint)
         // if any neg(constraint) is sat, a counter-example is found
@@ -486,6 +493,9 @@ impl Solver for BaselineSolver {
         }
         let clauses_references: Vec<&z3::ast::Bool<'_>> = clauses.iter().collect();
         solver.assert(&z3::ast::Bool::or(&ctx, clauses_references.as_slice()));
+
+        // solver.check();
+        // println!("{:?}", solver.get_model().unwrap());
 
         match solver.check() {
             z3::SatResult::Unsat => None, // no counter-example found
@@ -674,13 +684,13 @@ mod tests {
         let func_name = "AIG";
         let expr = Expr::And(Box::from(Expr::Var("a".to_string(), Sort::Bool)), Box::from(Expr::Var("b".to_string(), Sort::Bool)));
         let counter_example = solver.verify(&prog, func_name, &expr);
-        match counter_example {
-            Some(cex) => {
-                println!("Counter Example: {:?}", cex);
-            }
-            None => {
-                println!("No Counter Example Found!");
-            }
-        }
+        // match counter_example {
+        //     Some(cex) => {
+        //         println!("Counter Example: {:?}", cex);
+        //     }
+        //     None => {
+        //         println!("No Counter Example Found!");
+        //     }
+        // }
     }
 }
