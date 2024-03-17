@@ -624,7 +624,11 @@ impl Solver for BaselineSolver {
 
 
 mod tests {
-    use super::depth_of_subs;
+    use std::fs;
+
+    use crate::{parser::parse, solver::Solver};
+
+    use super::{depth_of_subs, Expr, Sort};
 
     #[test]
     fn test_permutation_1() {
@@ -656,7 +660,27 @@ mod tests {
         )
     }
 
+    #[test]
     fn test_verify() {
-        
+        let filename = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), format!("benchmarks/bitvector-benchmarks/parity-AIG-d0.sl"));
+        let input = fs::read_to_string(&filename).unwrap();
+        let prog = match parse(&input){
+            Ok(res) => res,
+            Err(e) => {
+                panic!("Error parsing file: {}\nError: {:#?}", filename, e);
+            }
+        };
+        let solver = super::BaselineSolver;
+        let func_name = "AIG";
+        let expr = Expr::And(Box::from(Expr::Var("a".to_string(), Sort::Bool)), Box::from(Expr::Var("b".to_string(), Sort::Bool)));
+        let counter_example = solver.verify(&prog, func_name, &expr);
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
     }
 }
