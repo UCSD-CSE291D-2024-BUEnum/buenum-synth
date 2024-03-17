@@ -30,8 +30,6 @@ pub trait Solver {
 
     fn expr_to_smt<'ctx>(&self, expr: &Self::Expr, vars: &'ctx HashMap<String, z3::ast::Dynamic>, funcs: &'ctx HashMap<String, z3::FuncDecl>, ctx: &'ctx z3::Context) -> Box<z3::ast::Dynamic<'ctx>>;
 
-    // fn sort_to_z3_sort(&self, sort: &self::ast::Sort, ctx: &z3::Context) -> z3::Sort;
-
     fn sort_to_z3_sort<'ctx>(&self, sort: &self::ast::Sort, ctx: &'ctx z3::Context) -> z3::Sort<'ctx>;
 
     fn synthesize(&self, p: &Self::Prog, func_name: &str) -> Option<Self::Expr> {
