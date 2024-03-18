@@ -11,6 +11,7 @@ use crate::parser::ast::*;
 use crate::parser::ast::Expr::Var;
 use crate::solver::GrammarTrait;
 use crate::solver::Solver;
+use crate::parser::eval::EvalEnv;
 
 use super::ProgTrait;
 
@@ -320,6 +321,10 @@ impl Solver for BaselineSolver {
         BaselineConstraint {
             constraints: p.constraints.clone(),
         }
+    }
+
+    fn oe(&self, env: &EvalEnv, e1: &Self::Expr, e2: &Self::Expr) -> bool {
+        e1.eval(env) == e2.eval(env)
     }
 
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Option<Self::CounterExample> {
@@ -649,6 +654,11 @@ mod tests {
         assert_eq!(ans,
                    [[0, 2], [1, 1], [2, 0]]
         )
+    }
+
+    #[test]
+    fn test_oe() {
+        unimplemented!()
     }
 
     #[test]

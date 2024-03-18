@@ -5,6 +5,7 @@ use std::cell::RefCell;
 
 use crate::parser::ast;
 use crate::parser::ast::ProdName;
+use crate::parser::eval;
 
 use std::collections::HashMap;
 
@@ -26,6 +27,8 @@ pub trait Solver {
     fn extract_grammar<'a>(&'a self, p: &'a Self::Prog, func_name: &str) -> &Self::Grammar;
 
     fn extract_constraint(&self, p: &Self::Prog) -> Self::Constraint;
+
+    fn oe(&self, env: &self::eval::EvalEnv, e1: &Self::Expr, e2: &Self::Expr) -> bool;
 
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Option<Self::CounterExample>;
 
