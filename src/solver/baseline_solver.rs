@@ -1,14 +1,9 @@
 use crate::solver::ast::GTerm;
 use std::collections::HashMap;
-use std::hash::Hash;
-use std::ptr::null;
-use std::thread::sleep;
-use std::time::Duration;
 
 use z3::ast::Ast;
 
 use crate::parser::ast::*;
-use crate::parser::ast::Expr::Var;
 use crate::solver::GrammarTrait;
 use crate::solver::Solver;
 use crate::parser::eval::EvalEnv;
