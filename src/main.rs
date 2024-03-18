@@ -16,12 +16,6 @@ fn main() {
     let solver = BaselineSolver{};
     let binding = result.unwrap();
     let grammar = solver::Solver::extract_grammar(&solver, &binding, "f");
-    let binding = Vec::new();
-    let mut enumerator = solver::Solver::enumerate(&solver, &grammar, binding.as_slice());
-    while let Some(item) = enumerator.next() {
-        println!("Hello");
-        //println!("{:?}", item);
-        sleep(Duration::from_secs(10));
-        //break
-    }
+    let program = solver::Solver::synthesize(&solver, &binding, "f");
+    println!("{:?}", program);
 }

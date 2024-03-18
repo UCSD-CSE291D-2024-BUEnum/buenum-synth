@@ -8,6 +8,7 @@ use crate::parser::ast::ProdName;
 
 use std::collections::HashMap;
 
+
 pub trait Solver {
     type Prog: ProgTrait;
     type Expr;
