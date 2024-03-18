@@ -22,4 +22,4 @@
 
 ; Solution:
 ;(define-fun AIG ((a Bool) (b Bool) (c Bool)) Bool
-;(not (and (not a) (not b)))) 
+;(not (and (and (not a) (not b)) (not c)))) 
