@@ -31,29 +31,7 @@ pub struct BaselineEnumerator<'a, S: Solver> {
     counterexamples: &'a [S::CounterExample],
     cache: HashMap<(ProdName, usize), Vec<GExpr>>,
     current_size: usize,
-}
-
-struct Counter {
-    value: usize,
-}
-
-impl Counter {
-    fn new(n: usize) -> Counter {
-        Counter { value: n }
-    }
-
-    fn decrement(&mut self, n: usize) {
-        // println!("v = {}, n = {}", self.value, n);
-        self.value -= n;
-    }
-
-    fn set(&mut self, n: usize) {
-        self.value = n;
-    }
-
-    fn value(&self) -> usize {
-        self.value
-    }
+    index: usize,
 }
 
 /// DFS to search all the possible depth combination of sub non-terminals
@@ -93,6 +71,7 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             counterexamples,
             cache: HashMap::new(),
             current_size: 0,
+            index: 0,
         }
     }
 
@@ -148,24 +127,17 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                 if self.grammar.lhs_names().contains(&&symbol) {
                     if let Some(productions) = self.grammar.non_terminals().iter().find(|p| p.lhs == *symbol) {
                         let lhs = &productions.lhs;
-                        for prod in &productions.rhs {
-                            match father {
-                                GExpr::Var(name, ..) => {
-                                    if name == symbol {
-                                        return ret;
-                                    }
-                                },
-                                _ => {
-                                    match prod {
-                                        GTerm::BfTerm(e) => ret.extend(self.permutation(lhs, e, expr, d).clone()),
-                                        _ => unreachable!()
-                                    }
+                        match father {
+                            GExpr::Var(name, ..) => {
+                                if name == symbol {
+                                    return ret;
                                 }
+                            },
+                            _ => {
+                                ret.extend(self.cache.get(&(lhs.clone(), d)).unwrap().clone())
                             }
                         }
                     }
-                } else {
-                    //TODO: do something
                 }
             },
             GExpr::FuncApply(funcName, subs)
@@ -299,33 +271,21 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
             //println!("{:?}", self.cache);
             for non_terminal in self.grammar.non_terminals().iter().map(|p| &p.lhs) {
                 if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                    if let Some(expr) = expressions.first() {
-                        //TODO: do something
-                        println!("{:?}", expressions);
-                        continue;
-                        return Some(expr.to_expr());
+                    let program = &expressions[self.index];
+                    self.index += 1;
+                    if self.index == expressions.len() {
+                        self.current_size += 1;
                     }
+                    return Option::from(program.to_expr());
                 } else {
                     self.grow(non_terminal);
                     if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                        println!("\nthis is iter-{}", self.current_size);
-                        sleep(Duration::from_secs(10));
-                        for expr in expressions {
-                            println!("{:?}", expr)
-                        }
-                        // if let Some(expr) = expressions.first() {
-                        //     println!("{:?}", expressions);
-                        //
-                        //     //TODO: do something
-                        //     continue;
-                        //     return Some(expr.to_expr());
-                        // }
+                        self.index = 0;
+                        let program = &expressions[self.index];
+                        self.index += 1;
+                        return Option::from(program.to_expr());
                     }
                 }
-            }
-            self.current_size += 1;
-            if self.current_size > S::MAX_SIZE {
-                return None;
             }
         }
     }
