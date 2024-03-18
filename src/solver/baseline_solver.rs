@@ -1,5 +1,6 @@
 use crate::solver::ast::GTerm;
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::ptr::null;
 use std::thread::sleep;
 use std::time::Duration;
@@ -364,7 +365,7 @@ impl Solver for BaselineSolver {
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Option<Self::CounterExample> {
         let constraints = self.extract_constraint(p).constraints;
         let declare_vars = p.declare_var.clone();
-        let define_funs = p.define_fun.clone();
+        let mut define_funs = p.define_fun.clone();
 
         let cfg = z3::Config::new();
         let ctx = z3::Context::new(&cfg);
@@ -402,8 +403,18 @@ impl Solver for BaselineSolver {
             }
         }
 
+        // add func_name and expr into define_funs
+        define_funs.insert(
+            func_name.to_string(),
+            self::FuncBody{
+                name:func_name.to_string(),
+                params: p.get_synth_func(func_name).unwrap().0.params.clone(),
+                ret_sort: p.get_synth_func(func_name).unwrap().0.ret_sort.clone(),
+                body: expr.clone(),
+        });
+
         // Add define_funs into solver
-        let mut funcs: HashMap<String, z3::FuncDecl> = HashMap::new();
+        let mut funcs: HashMap<String, z3::RecFuncDecl> = HashMap::new();
         for f_name in define_funs.keys() {
             // function declaration
             let f_params = &define_funs[f_name].params;
@@ -413,35 +424,45 @@ impl Solver for BaselineSolver {
             }
             let domain_references: Vec<&z3::Sort> = domain.iter().collect();
             let f_ret_sort = &define_funs[f_name].ret_sort;
-            let decl = z3::FuncDecl::new(&ctx, f_name.clone(), domain_references.as_slice(), &self.sort_to_z3_sort(f_ret_sort, &ctx));
+            let decl = z3::RecFuncDecl::new(&ctx, f_name.clone(), domain_references.as_slice(), &self.sort_to_z3_sort(f_ret_sort, &ctx));
 
-            // add function definition into solver
-            let mut args = Vec::new();
+            // add function definition
+            let mut args: Vec<z3::ast::Dynamic> = Vec::new();
             for param in f_params {
-                args.push(&vars[&param.0]);
+                match param.1 {
+                    Sort::Bool => {
+                        args.push(z3::ast::Dynamic::from(z3::ast::Bool::new_const(&ctx, param.0.clone())));
+                    }
+                    Sort::Int => {
+                        args.push(z3::ast::Dynamic::from(z3::ast::Int::new_const(&ctx, param.0.clone())));
+                    }
+                    Sort::BitVec(w) => {
+                        args.push(z3::ast::Dynamic::from(z3::ast::BV::new_const(&ctx, param.0.clone(), w as u32)));
+                    }
+                    Sort::String => {
+                        args.push(z3::ast::Dynamic::from(z3::ast::String::new_const(&ctx, param.0.clone())));
+                    }
+                    _ => panic!("Unsupported sort"),
+                }
             }
-            let args_references: Vec<&dyn z3::ast::Ast> = args.iter().map(|&arg| arg as &dyn z3::ast::Ast).collect();
+            
+            let args_references: Vec<&dyn z3::ast::Ast> = args.iter().map(|arg| arg as &dyn z3::ast::Ast).collect();
+            let mut local_var: HashMap<String, z3::ast::Dynamic> = HashMap::new();
+            for param in f_params {
+                local_var.insert(param.0.clone(), match param.1 {
+                    Sort::Bool => z3::ast::Dynamic::from(z3::ast::Bool::new_const(&ctx, param.0.clone())),
+                    Sort::Int => z3::ast::Dynamic::from(z3::ast::Int::new_const(&ctx, param.0.clone())),
+                    Sort::BitVec(w) => z3::ast::Dynamic::from(z3::ast::BV::new_const(&ctx, param.0.clone(), w as u32)),
+                    Sort::String => z3::ast::Dynamic::from(z3::ast::String::new_const(&ctx, param.0.clone())),
+                    _ => panic!("Unsupported sort"),
+                });
+            }
             let f_body = &define_funs[f_name].body;
-            solver.assert(&decl.apply(args_references.as_slice())._eq(&(*self.expr_to_smt(&f_body, &vars, &funcs, &ctx))));
+            decl.add_def(&args_references, &*self.expr_to_smt(&f_body, &local_var, &funcs, &ctx));
 
-            // bookkeeping function declaration
+            // bookkeeping functions
             funcs.insert(f_name.clone(), decl);
         }
-
-        // add func_name with expr into solver
-        let syn_func = p.get_synth_func(func_name).unwrap().0;
-        let params = &syn_func.params;
-        let domain: Vec<z3::Sort> = params.iter().map(|(_, sort)| self.sort_to_z3_sort(sort, &ctx)).collect();
-        let domain_references: Vec<&z3::Sort> = domain.iter().collect();
-        let ret_sort = self.sort_to_z3_sort(&p.get_synth_func(func_name).unwrap().0.ret_sort, &ctx);
-        let decl = z3::FuncDecl::new(&ctx, func_name.to_string(), domain_references.as_slice(), &ret_sort);
-        let mut args = Vec::new();
-        for param in params {
-            args.push(&vars[&param.0]);
-        }
-        let args_references: Vec<&dyn z3::ast::Ast> = args.iter().map(|&arg| arg as &dyn z3::ast::Ast).collect();
-        solver.assert(&decl.apply(args_references.as_slice())._eq(&(*self.expr_to_smt(expr, &vars, &funcs, &ctx))));
-        funcs.insert(func_name.to_string(), decl);
 
         // add constraint clauses with disjunction of neg(constraint)
         // if any neg(constraint) is sat, a counter-example is found
@@ -527,7 +548,7 @@ impl Solver for BaselineSolver {
         &self,
         expr: &Self::Expr,
         vars: &'ctx HashMap<String, z3::ast::Dynamic>,
-        funcs: &'ctx HashMap<String, z3::FuncDecl>,
+        funcs: &'ctx HashMap<String, z3::RecFuncDecl>,
         ctx: &'ctx z3::Context,
     ) -> Box<z3::ast::Dynamic<'ctx>> {
         macro_rules! bv_unary_operation {
@@ -671,8 +692,8 @@ mod tests {
     }
 
     #[test]
-    fn test_verify() {
-        let filename = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), format!("benchmarks/bitvector-benchmarks/parity-AIG-d0.sl"));
+    fn test_verify_1() {
+        let filename = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), format!("test_bool_1.sl"));
         let input = fs::read_to_string(&filename).unwrap();
         let prog = match parse(&input){
             Ok(res) => res,
@@ -680,17 +701,176 @@ mod tests {
                 panic!("Error parsing file: {}\nError: {:#?}", filename, e);
             }
         };
+        println!("{:#?}", prog);
         let solver = super::BaselineSolver;
         let func_name = "AIG";
-        let expr = Expr::And(Box::from(Expr::Var("a".to_string(), Sort::Bool)), Box::from(Expr::Var("b".to_string(), Sort::Bool)));
+
+        // first attempt: a
+        let expr = Expr::Var("a".to_string(), Sort::Bool);
+        println!("Expr: {:?}", expr);
         let counter_example = solver.verify(&prog, func_name, &expr);
-        // match counter_example {
-        //     Some(cex) => {
-        //         println!("Counter Example: {:?}", cex);
-        //     }
-        //     None => {
-        //         println!("No Counter Example Found!");
-        //     }
-        // }
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
+
+        // second attempt: not a
+        let expr = Expr::Not(Box::from(Expr::Var("a".to_string(), Sort::Bool)));
+        println!("Expr: {:?}", expr);
+        let counter_example = solver.verify(&prog, func_name, &expr);
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
+
+        // thrid attempt: and a b
+        let expr = Expr::And(Box::from(Expr::Var("a".to_string(), Sort::Bool)), Box::from(Expr::Var("b".to_string(), Sort::Bool)));
+        println!("Expr: {:?}", expr);
+        let counter_example = solver.verify(&prog, func_name, &expr);
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
+
+        // fourth attempt: and (not a) b
+        let expr = Expr::And(
+                            Box::from(Expr::Not(
+                                Box::from(Expr::Var("a".to_string(), Sort::Bool)))), 
+                            Box::from(Expr::Var("b".to_string(), Sort::Bool)));
+        let counter_example = solver.verify(&prog, func_name, &expr);
+        println!("Expr: {:?}", expr);
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
+
+        // fifth attempt (correct): not (and (not a) (not b))
+        let expr = Expr::Not(
+                            Box::from(Expr::And(
+                                Box::from(Expr::Not(
+                                    Box::from(Expr::Var("a".to_string(), Sort::Bool)))), 
+                                Box::from(Expr::Not(
+                                    Box::from(Expr::Var("b".to_string(), Sort::Bool)))))));
+        let counter_example = solver.verify(&prog, func_name, &expr);
+        println!("Expr: {:?}", expr);
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
+
+    }
+
+    #[test]
+    fn test_verify_2() {
+        let filename = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), format!("test_bool_2.sl"));
+        let input = fs::read_to_string(&filename).unwrap();
+        let prog = match parse(&input){
+            Ok(res) => res,
+            Err(e) => {
+                panic!("Error parsing file: {}\nError: {:#?}", filename, e);
+            }
+        };
+        println!("{:#?}", prog);
+        let solver = super::BaselineSolver;
+        let func_name = "AIG";
+
+        // first attempt: a
+        let expr = Expr::Var("a".to_string(), Sort::Bool);
+        println!("Expr: {:?}", expr);
+        let counter_example = solver.verify(&prog, func_name, &expr);
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
+
+        // second attempt: not a
+        let expr = Expr::Not(Box::from(Expr::Var("a".to_string(), Sort::Bool)));
+        println!("Expr: {:?}", expr);
+        let counter_example = solver.verify(&prog, func_name, &expr);
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
+
+        // thrid attempt: and a b
+        let expr = Expr::And(Box::from(Expr::Var("a".to_string(), Sort::Bool)), Box::from(Expr::Var("b".to_string(), Sort::Bool)));
+        println!("Expr: {:?}", expr);
+        let counter_example = solver.verify(&prog, func_name, &expr);
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
+
+        // fourth attempt: and (and a b) c
+        let expr = Expr::And(
+                            Box::from(Expr::And(
+                                Box::from(Expr::Var("a".to_string(), Sort::Bool)),
+                                Box::from(Expr::Var("b".to_string(), Sort::Bool))),
+                            ), 
+                            Box::from(Expr::Var("c".to_string(), Sort::Bool)));
+        let counter_example = solver.verify(&prog, func_name, &expr);
+        println!("Expr: {:?}", expr);
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
+
+        // fifth attempt (correct): not (and (and (not a) (not b)) (not c))
+        let expr = Expr::Not(
+                            Box::from(Expr::And(
+                                Box::from(Expr::And(
+                                    Box::from(Expr::Not(
+                                        Box::from(Expr::Var("a".to_string(), Sort::Bool)))), 
+                                    Box::from(Expr::Not(
+                                        Box::from(Expr::Var("b".to_string(), Sort::Bool)))))),
+                                Box::from(Expr::Not(
+                                    Box::from(Expr::Var("c".to_string(), Sort::Bool)))))));
+        let counter_example = solver.verify(&prog, func_name, &expr);
+        println!("Expr: {:?}", expr);
+        match counter_example {
+            Some(cex) => {
+                println!("Counter Example: {:?}", cex);
+            }
+            None => {
+                println!("No Counter Example Found!");
+            }
+        }
+
     }
 }
