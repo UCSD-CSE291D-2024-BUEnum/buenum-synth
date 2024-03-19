@@ -6,15 +6,14 @@ use egg::{
     *
 };
 use strum_macros::Display;
-use z3::ast::Ast;
+use z3::ast::{Ast, Dynamic};
 use z3::{
     ast::Bool,
     Config,
     Context,
     Solver
 };
-
-fn verify_expression(
+fn verify(
     expr: &RecExpr<BoolLanguage>,
     var_map: &HashMap<String, z3::ast::Bool>,
     ctx: &Context,
@@ -22,25 +21,46 @@ fn verify_expression(
 ) -> Result<(), HashMap<String, bool>> {
     let solver = Solver::new(ctx);
 
-    // Convert the synthesized expression to a z3 expression
-    let z3_expr = convert_to_z3_expr(&expr, var_map, ctx);
+    // Convert the synthesized expression to a Z3 expression
+    let expr_str = expr.pretty(100);
+    // println!("Synthesized expression: {}", expr_str);
+    let z3_expr = Dynamic::from(convert_to_z3_expr(&expr, var_map, ctx));
 
-    // Add the constraint that the synthesized expression should be equivalent to the custom function
-    solver.assert(&z3_expr._eq(&Bool::new_const(ctx, "custom_fn")));
-
-    if solver.check() == z3::SatResult::Sat {
-        Ok(())
-    } else {
-        let model = solver.get_model().unwrap();
-        let mut counter_example = HashMap::new();
+    // Create a Z3 function declaration for the custom function
+    let custom_fn_decl = {
+        let mut domain = Vec::new();
         for (var, _) in var_map {
-            let value = model.eval(&var_map[var], true).unwrap().as_bool().unwrap();
-            counter_example.insert(var.clone(), value);
+            domain.push(var_map[var].get_sort());
         }
-        Err(counter_example)
+        let domain_refs: Vec<&z3::Sort> = domain.iter().collect();
+        z3::FuncDecl::new(ctx, "custom_fn", &domain_refs, &z3::Sort::bool(ctx))
+    };
+
+    // Create Z3 variables for the custom function arguments
+    let mut custom_fn_args = Vec::new();
+    for (var, _) in var_map {
+        custom_fn_args.push(var_map[var].clone());
+    }
+    let custom_fn_args_refs: Vec<&dyn z3::ast::Ast> = custom_fn_args.iter().map(|arg| arg as &dyn z3::ast::Ast).collect();
+
+    
+    // Assert that the synthesized expression is not equal to the custom function
+    solver.assert(&z3_expr._eq(&custom_fn_decl.apply(&custom_fn_args_refs)).not());
+
+    match solver.check() {
+        z3::SatResult::Unsat => Ok(()), // no counter-example found
+        z3::SatResult::Unknown => panic!("Unknown z3 solver result"),
+        z3::SatResult::Sat => {
+            let model = solver.get_model().unwrap();
+            let mut counter_example = HashMap::new();
+            for (var, _) in var_map {
+                let value = model.eval(&var_map[var], true).unwrap().as_bool().unwrap();
+                counter_example.insert(var.clone(), value);
+            }
+            Err(counter_example)
+        }
     }
 }
-
 fn convert_to_z3_expr<'ctx>(
     expr: &'ctx RecExpr<BoolLanguage>,
     var_map: &'ctx HashMap<String, Bool<'ctx>>,
@@ -202,15 +222,17 @@ fn pretty_egraph<L: Language, N: Analysis<L>>(egraph: &EGraph<L, N>)
 where
     L: std::fmt::Display
 {
-    println!("EGraph size: {}", egraph.number_of_classes());
+    println!("\nPretty printing egraph...");
+    println!("  EGraph size: {}", egraph.number_of_classes());
     for class in egraph.classes() {
         println!(
-            "Class {}: {:?} [{}]",
+            "    Class {}: {:?} [{}]",
             class.id,
             egraph[class.id].data,
             egraph.id_to_expr(class.id).pretty(80)
         );
     }
+    println!();
 }
 
 macro_rules! handle_language_construct {
@@ -304,33 +326,17 @@ impl<'a> Enumerator<'a> {
                                         .classes()
                                         .map(|c| (c.id, new_egraph.add_expr(&right_egraph.id_to_expr(c.id))))
                                         .collect();
-                                    // println!("Left egraph:");
-                                    // pretty_egraph(&new_egraph);
-                                    // println!("Right egraph:");
-                                    // pretty_egraph(&right_egraph);
-                                    // println!("Merging...");
-                                    // merge_egraphs(right_egraph, &mut new_egraph);
-                                    // println!("Merged egraph:");
-                                    // pretty_egraph(&new_egraph);
+                                    println!("Left egraph:");
+                                    pretty_egraph(&new_egraph);
+                                    println!("Right egraph:");
+                                    pretty_egraph(&right_egraph);
+                                    println!("Merging...");
+                                    merge_egraphs(right_egraph, &mut new_egraph);
+                                    println!("Merged egraph:");
+                                    pretty_egraph(&new_egraph);
                                     for component in &prod.rhs {
                                         if let ProdComponent::LanguageConstruct(lang_construct) = component {
                                             match lang_construct {
-                                                // ArithLanguage::Neg(_) => {
-                                                //     let mut unary_egraph = new_egraph.clone().with_explanations_enabled();
-                                                //     for eclass in new_egraph.classes() {
-                                                //         let new_id = unary_egraph.add_expr(&new_egraph.id_to_expr(eclass.id));
-                                                //         let expr = ArithLanguage::Neg([new_id]);
-                                                //         unary_egraph.add(expr);
-                                                //     }
-                                                //     merge_egraphs(&unary_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
-                                                // }
-                                                // ArithLanguage::Add(_) => handle_binary_op!(ArithLanguage::Add, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
-                                                // ArithLanguage::Sub(_) => handle_binary_op!(ArithLanguage::Sub, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
-                                                // ArithLanguage::Mul(_) => handle_binary_op!(ArithLanguage::Mul, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
-                                                // ArithLanguage::Shl(_) => handle_binary_op!(ArithLanguage::Shl, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
-                                                // ArithLanguage::Or(_) => handle_binary_op!(ArithLanguage::Or, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
-                                                // ArithLanguage::Xor(_) => handle_binary_op!(ArithLanguage::Xor, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
-                                                // ArithLanguage::And(_) => handle_binary_op!(ArithLanguage::And, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
                                                 BoolLanguage::And(_) => handle_binary_op!(
                                                     BoolLanguage::And,
                                                     left_mapping,
@@ -447,37 +453,15 @@ impl EggSolver {
         for size in 1..=max_size {
             let exprs = enumerator.enumerate(size, pts);
             for expr in exprs {
-                println!("Checking expression: {}", expr.pretty(100));
-                // let var_names: Vec<String> = expr
-                //     .as_ref()
-                //     // .clone()
-                //     .into_iter()
-                //     .filter_map(|node| match node {
-                //         BoolLanguage::Var(name) => Some(name.to_owned()),
-                //         _ => None,
-                //     })
-                //     .collect();
+                // println!("Checking expression: {}", expr.pretty(100));
                 let var_map: HashMap<String, Bool> = var_names
                     .iter()
                     .map(|var| (var.clone(), Bool::new_const(&ctx, var.as_str())))
                     .collect();
-
-                if pts.is_empty() {
-                    let mut counter_example = HashMap::new();
-                    for var in var_names {
-                        counter_example.insert(var.clone(), false);
-                    }
+                if let Err(counter_example) = verify(&expr, &var_map, &ctx, custom_fn) {
                     pts.push((counter_example.clone(), custom_fn(&counter_example)));
-                    if let Err(updated_counter_example) = verify_expression(&expr, &var_map, &ctx, custom_fn) {
-                        pts.pop();
-                        pts.push((updated_counter_example.clone(), custom_fn(&updated_counter_example)));
-                    }
                 } else {
-                    if let Err(counter_example) = verify_expression(&expr, &var_map, &ctx, custom_fn) {
-                        pts.push((counter_example.clone(), custom_fn(&counter_example)));
-                    } else {
-                        return Some(expr);
-                    }
+                    return Some(expr);
                 }
             }
         }
