@@ -21,7 +21,7 @@
 		    (bvadd Start Start)
 		    (if0 Start Start Start)
  ))
-)or and xor
+)
 )
 
 
