@@ -1,11 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use egg::{
     rewrite as rw,
     *
 };
-use std::fmt;
-use itertools::Itertools;
 
 define_language! {
     pub enum ArithLanguage {
@@ -38,11 +37,14 @@ struct Grammar {
 
 struct Enumerator<'a> {
     grammar: &'a Grammar,
-    cache: HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>,
+    cache: HashMap<(ProdName, usize), EGraph<ArithLanguage, ()>>,
     current_size: usize
 }
 
 impl<'a> Enumerator<'a> {
+    fn get_expr(&self, key: &(ProdName, usize), id: Id) -> RecExpr<ArithLanguage> {
+        self.cache.get(&key).unwrap().id_to_expr(id)
+    }
     fn new(grammar: &'a Grammar) -> Self {
         Enumerator {
             grammar,
@@ -54,20 +56,18 @@ impl<'a> Enumerator<'a> {
     fn grow(&mut self) {
         let size = self.current_size + 1;
         let mut new_expressions = HashMap::new();
-    
+
         // Base case: directly add numbers for size 1
         if size == 1 {
             for prod in &self.grammar.productions {
-                let mut expr = RecExpr::default();
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
                         match lang_construct {
-                            ArithLanguage::Num(_) => {
-                                expr.add(lang_construct.clone());
-                                new_expressions.entry((prod.lhs.clone(), size))
-                                               .or_insert_with(HashSet::new)
-                                               .insert(expr.clone());
-                            },
+                            ArithLanguage::Num(n) => {
+                                let mut egraph = EGraph::new(());
+                                egraph.add(lang_construct.clone());
+                                new_expressions.insert((prod.lhs.clone(), size), egraph);
+                            }
                             _ => {}
                         }
                     }
@@ -78,46 +78,34 @@ impl<'a> Enumerator<'a> {
             for prod in &self.grammar.productions {
                 for left_size in 1..size {
                     let right_size = size - left_size;
-                    if let Some(left_exprs) = self.cache.get(&(prod.lhs.clone(), left_size)) {
-                        if let Some(right_exprs) = self.cache.get(&(prod.lhs.clone(), right_size)) {
-                            for left_expr in left_exprs {
-                                for right_expr in right_exprs {
-                                    let mut expr = RecExpr::default();
-                                    // Clone and add all nodes from left_expr to the new expr
-                                    let lhs_ids: Vec<Id> = left_expr.as_ref().iter().map(|node| expr.add(node.clone())).collect();
-                                    // Clone and add all nodes from right_expr to the new expr
-                                    let rhs_ids: Vec<Id> = right_expr.as_ref().iter().map(|node| expr.add(node.clone())).collect();
-    
-                                    // Use the last ids from lhs_ids and rhs_ids for the arithmetic operation
-                                    let lhs_id = *lhs_ids.last().unwrap();
-                                    let rhs_id = *rhs_ids.last().unwrap();
-    
+                    if let Some(left_egraph) = self.cache.get(&(prod.lhs.clone(), left_size)) {
+                        if let Some(right_egraph) = self.cache.get(&(prod.lhs.clone(), right_size)) {
+                            for left_ec in left_egraph.classes() {
+                                for right_ec in right_egraph.classes() {
+                                    let left_id = left_ec.id;
+                                    let right_id = right_ec.id;
+                                    let mut egraph = EGraph::new(());
                                     // Add the operation based on production rule
                                     for component in &prod.rhs {
                                         if let ProdComponent::LanguageConstruct(lang_construct) = component {
                                             match lang_construct {
                                                 ArithLanguage::Add(_) => {
-                                                    expr.add(ArithLanguage::Add([lhs_id, rhs_id]));
-                                                    new_expressions.entry((prod.lhs.clone(), size))
-                                                                   .or_insert_with(HashSet::new)
-                                                                   .insert(expr.clone());
-                                                },
+                                                    egraph.add(ArithLanguage::Add([left_id, right_id]));
+                                                }
                                                 ArithLanguage::Sub(_) => {
-                                                    expr.add(ArithLanguage::Sub([lhs_id, rhs_id]));
-                                                    new_expressions.entry((prod.lhs.clone(), size))
-                                                                   .or_insert_with(HashSet::new)
-                                                                   .insert(expr.clone());
-                                                },
+                                                    egraph.add(ArithLanguage::Sub([left_id, right_id]));
+                                                }
                                                 ArithLanguage::Mul(_) => {
-                                                    expr.add(ArithLanguage::Mul([lhs_id, rhs_id]));
-                                                    new_expressions.entry((prod.lhs.clone(), size))
-                                                                   .or_insert_with(HashSet::new)
-                                                                   .insert(expr.clone());
-                                                },
-                                                _ => {}
+                                                    egraph.add(ArithLanguage::Mul([left_id, right_id]));
+                                                }
+                                                _ => unreachable!()
                                             }
                                         }
                                     }
+                                    new_expressions
+                                        .entry((prod.lhs.clone(), size))
+                                        .or_insert_with(|| EGraph::new(()))
+                                        .egraph_union(&egraph);
                                 }
                             }
                         }
@@ -125,32 +113,33 @@ impl<'a> Enumerator<'a> {
                 }
             }
         }
-    
+
         // Update cache with new expressions
-        for (key, exprs) in new_expressions {
-            self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
+        for (key, egraph) in new_expressions {
+            self.cache.insert(key, egraph);
         }
-    
+
         self.current_size = size;
     }
-    
 
     fn enumerate(&mut self, size: usize) -> Vec<RecExpr<ArithLanguage>> {
         while self.current_size < size {
             self.grow();
         }
+
         // Access the cache directly for expressions of the given size.
         // This ensures we only collect expressions that match the size criteria.
-        self.cache.iter()
-            .filter_map(|((_, expr_size), exprs)| {
-                if *expr_size == size {
-                    Some(exprs.clone())
-                } else {
-                    None
+        let mut result = Vec::new();
+        for ((prod_name, expr_size), egraph) in &self.cache {
+            if *expr_size == size {
+                for eclass in egraph.classes() {
+                    let id = eclass.id;
+                    let expr = egraph.id_to_expr(id);
+                    result.push(expr);
                 }
-            })
-            .flatten()
-            .collect()
+            }
+        }
+        result
     }
 }
 
@@ -202,30 +191,19 @@ fn main() {
         ]
     };
 
+    // let enumerator = RefCell::new(Enumerator::new(&grammar));
     let mut enumerator = Enumerator::new(&grammar);
     let max_size = 5; // Adjust this value based on the depth of enumeration you desire
 
     for size in 1..=max_size {
         println!("Enumerating programs of size {}", size);
-        let programs = enumerator.enumerate(size);
-        let mut count = 3;
-        for program in &programs {
-            println!("{}", program.pretty(100));
-            if count == 0 {
-                println!("... {} in total", programs.len());
-                break;
-            } else {
-                count -= 1;
-            }
+        let exprs = enumerator.enumerate(size);
+        for expr in exprs {
+            println!("{}", expr.pretty(100));
         }
         println!(); // Just to have a clear separation for each size's output
     }
     println!("Done!");
-    println!("Total number of programs enumerated: {}", enumerator.cache.values().map(|s| s.len()).sum::<usize>());
-    // println!("Cache contents:");
-    // for (key, value) in &enumerator.cache {
-    //     println!("Key: {:?}, Value: {:?}", key, value);
-    // }
 }
 
 #[cfg(test)]
