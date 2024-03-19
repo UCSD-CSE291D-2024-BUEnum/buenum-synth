@@ -135,25 +135,53 @@ impl<'a> Enumerator<'a> {
                         if let Some(right_egraph) = self.cache.get(&(prod.lhs.clone(), right_size)) {
                             for left_enode in left_egraph.classes() {
                                 for right_enode in right_egraph.classes() {
-                                    let mut new_egraph = left_egraph.clone();
-                                    merge_egraphs(right_egraph, &mut new_egraph);
+                                    // println!("Merging left and right egraphs:");
+                                    let mut new_egraph = left_egraph.clone().with_explanations_enabled();
+                                    let left_mapping: HashMap<_, _> = left_egraph.classes().map(|c| (c.id, new_egraph.add_expr(&left_egraph.id_to_expr(c.id)))).collect();
+                                    let right_mapping: HashMap<_, _> = right_egraph.classes().map(|c| (c.id, new_egraph.add_expr(&right_egraph.id_to_expr(c.id)))).collect();
+                                    // println!("Left egraph:");
+                                    // pretty_egraph(&new_egraph);
+                                    // println!("Right egraph:");
+                                    // pretty_egraph(&right_egraph);
+                                    // println!("Merging...");
+                                    // merge_egraphs(right_egraph, &mut new_egraph);
+                                    // println!("Merged egraph:");
+                                    // pretty_egraph(&new_egraph);
                                     for component in &prod.rhs {
                                         if let ProdComponent::LanguageConstruct(lang_construct) = component {
                                             match lang_construct {
                                                 ArithLanguage::Add(_) => {
-                                                    let expr = ArithLanguage::Add([left_enode.id, right_enode.id]);
-                                                    new_egraph.add(expr);
-                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
+                                                    for &left_id in left_mapping.keys() {
+                                                        for &right_id in right_mapping.keys() {
+                                                            let new_left_id = left_mapping[&left_id];
+                                                            let new_right_id = right_mapping[&right_id];
+                                                            let expr = ArithLanguage::Add([new_left_id, new_right_id]);
+                                                            new_egraph.add(expr);
+                                                            merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
+                                                        }
+                                                    }
                                                 }
                                                 ArithLanguage::Sub(_) => {
-                                                    let expr = ArithLanguage::Sub([left_enode.id, right_enode.id]);
-                                                    new_egraph.add(expr);
-                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
+                                                    for &left_id in left_mapping.keys() {
+                                                        for &right_id in right_mapping.keys() {
+                                                            let new_left_id = left_mapping[&left_id];
+                                                            let new_right_id = right_mapping[&right_id];
+                                                            let expr = ArithLanguage::Sub([new_left_id, new_right_id]);
+                                                            new_egraph.add(expr);
+                                                            merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
+                                                        }
+                                                    }
                                                 }
                                                 ArithLanguage::Mul(_) => {
-                                                    let expr = ArithLanguage::Mul([left_enode.id, right_enode.id]);
-                                                    new_egraph.add(expr);
-                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
+                                                    for &left_id in left_mapping.keys() {
+                                                        for &right_id in right_mapping.keys() {
+                                                            let new_left_id = left_mapping[&left_id];
+                                                            let new_right_id = right_mapping[&right_id];
+                                                            let expr = ArithLanguage::Mul([new_left_id, new_right_id]);
+                                                            new_egraph.add(expr);
+                                                            merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
+                                                        }
+                                                    }
                                                 }
                                                 _ => {}
                                             }
