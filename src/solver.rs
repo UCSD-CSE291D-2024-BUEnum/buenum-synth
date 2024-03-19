@@ -1,8 +1,6 @@
 pub mod baseline_solver;
 pub mod egg_solver;
 
-use std::cell::RefCell;
-
 use crate::parser::ast;
 use crate::parser::ast::ProdName;
 use crate::parser::eval::EvalEnv;
@@ -15,7 +13,7 @@ pub trait Solver {
     type Expr;
     type Grammar: GrammarTrait;
     type Constraint;
-    type CounterExample;
+    type CounterExample: Clone;
     const MAX_SIZE: usize = 10;
 
     fn enumerate<'a>(
@@ -37,22 +35,18 @@ pub trait Solver {
     fn sort_to_z3_sort<'ctx>(&self, sort: &self::ast::Sort, ctx: &'ctx z3::Context) -> z3::Sort<'ctx>;
 
     fn synthesize(&self, p: &Self::Prog, func_name: &str) -> Option<Self::Expr> {
-        let counterexamples: RefCell<Vec<Self::CounterExample>> = RefCell::new(Vec::new()); // we need to use RefCell because we cannot decide the reference lifetime statically
+        let mut counterexamples: Vec<Self::CounterExample> = Vec::new();
         let constraint = self.extract_constraint(p);
         let g = self.extract_grammar(p, func_name);
 
         loop {
-            let pts = counterexamples.borrow();
-            let mut candidates = self.enumerate(&g, &pts);
-
+            let pts = counterexamples.clone();
+            let mut candidates = self.enumerate(&g, pts.as_slice());
             while let Some(expr) = candidates.next() {
                 match self.verify(p, func_name, &expr) {
                     None => return Some(expr),
-                    Some(cex) => counterexamples.borrow_mut().push(cex)
+                    Some(cex) => counterexamples.push(cex)
                 }
-            }
-            if counterexamples.borrow().is_empty() {
-                return None;
             }
         }
     }
