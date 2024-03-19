@@ -6,12 +6,20 @@ use egg::{
     *
 };
 use strum_macros::Display;
-
-use z3::{ast::Bool, Config, Context, Solver};
 use z3::ast::Ast;
+use z3::{
+    ast::Bool,
+    Config,
+    Context,
+    Solver
+};
 
-
-fn verify_expression(expr: &RecExpr<BoolLanguage>, var_map: &HashMap<String, z3::ast::Bool>, ctx: &Context, custom_fn: &dyn Fn(&HashMap<String, bool>) -> bool) -> Result<(), HashMap<String, bool>> {
+fn verify_expression(
+    expr: &RecExpr<BoolLanguage>,
+    var_map: &HashMap<String, z3::ast::Bool>,
+    ctx: &Context,
+    custom_fn: &dyn Fn(&HashMap<String, bool>) -> bool
+) -> Result<(), HashMap<String, bool>> {
     let solver = Solver::new(ctx);
 
     // Convert the synthesized expression to a z3 expression
@@ -33,7 +41,11 @@ fn verify_expression(expr: &RecExpr<BoolLanguage>, var_map: &HashMap<String, z3:
     }
 }
 
-fn convert_to_z3_expr<'ctx>(expr: &'ctx RecExpr<BoolLanguage>, var_map: &'ctx HashMap<String, Bool<'ctx>>, ctx: &'ctx Context) -> Bool<'ctx> {
+fn convert_to_z3_expr<'ctx>(
+    expr: &'ctx RecExpr<BoolLanguage>,
+    var_map: &'ctx HashMap<String, Bool<'ctx>>,
+    ctx: &'ctx Context
+) -> Bool<'ctx> {
     match expr.as_ref().first() {
         Some(BoolLanguage::And([a, b])) => {
             let a_expr = convert_to_z3_expr(expr, var_map, ctx).clone();
@@ -51,7 +63,7 @@ fn convert_to_z3_expr<'ctx>(expr: &'ctx RecExpr<BoolLanguage>, var_map: &'ctx Ha
         }
         Some(BoolLanguage::Var(name)) => var_map[name].clone(),
         Some(BoolLanguage::Const(val)) => Bool::from_bool(ctx, *val),
-        _ => panic!("Unexpected node type"),
+        _ => panic!("Unexpected node type")
     }
 }
 
@@ -83,7 +95,7 @@ define_language! {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
 pub enum SyGuSLanguage {
     BoolLanguage(BoolLanguage),
-    ArithLanguage(ArithLanguage),
+    ArithLanguage(ArithLanguage)
 }
 
 type ProdName = String;
@@ -108,7 +120,7 @@ struct Grammar {
 
 #[derive(Default, Debug, Clone)]
 struct ObsEquiv {
-    pts: Vec<(HashMap<String, bool>, bool)>,
+    pts: Vec<(HashMap<String, bool>, bool)>
 }
 
 impl Analysis<BoolLanguage> for ObsEquiv {
@@ -157,7 +169,7 @@ impl Analysis<BoolLanguage> for ObsEquiv {
                 }
                 sum
             }
-            BoolLanguage::Const(n) => *n,
+            BoolLanguage::Const(n) => *n
         }
     }
 
@@ -186,12 +198,18 @@ fn merge_egraphs<L: Language, N: Analysis<L>>(source_egraph: &EGraph<L, N>, targ
     target_egraph.rebuild();
 }
 
-fn pretty_egraph<L: Language, N: Analysis<L>>(egraph: &EGraph<L, N>) 
-where L: std::fmt::Display
+fn pretty_egraph<L: Language, N: Analysis<L>>(egraph: &EGraph<L, N>)
+where
+    L: std::fmt::Display
 {
     println!("EGraph size: {}", egraph.number_of_classes());
     for class in egraph.classes() {
-        println!("Class {}: {:?} [{}]", class.id, egraph[class.id].data, egraph.id_to_expr(class.id).pretty(80));
+        println!(
+            "Class {}: {:?} [{}]",
+            class.id,
+            egraph[class.id].data,
+            egraph.id_to_expr(class.id).pretty(80)
+        );
     }
 }
 
@@ -199,7 +217,12 @@ macro_rules! handle_language_construct {
     ($lang_construct:expr, $egraph:ident, $new_expressions:ident, $prod:ident, $size:ident, $pts:ident, $is_terminal:expr) => {
         if $is_terminal($lang_construct) {
             $egraph.add($lang_construct.clone());
-            merge_egraphs(&$egraph, &mut $new_expressions.entry(($prod.lhs.clone(), $size)).or_insert(EGraph::new(ObsEquiv { pts: $pts.to_vec() }).with_explanations_enabled()));
+            merge_egraphs(
+                &$egraph,
+                &mut $new_expressions
+                    .entry(($prod.lhs.clone(), $size))
+                    .or_insert(EGraph::new(ObsEquiv { pts: $pts.to_vec() }).with_explanations_enabled())
+            );
         }
     };
 }
@@ -212,7 +235,12 @@ macro_rules! handle_binary_op {
                 let new_right_id = $right_mapping[&right_id];
                 let expr = $op([new_left_id, new_right_id]);
                 $new_egraph.add(expr);
-                merge_egraphs(&$new_egraph, &mut $new_expressions.entry(($prod.lhs.clone(), $size)).or_insert(EGraph::new(ObsEquiv { pts: $pts.to_vec() }).with_explanations_enabled()));
+                merge_egraphs(
+                    &$new_egraph,
+                    &mut $new_expressions
+                        .entry(($prod.lhs.clone(), $size))
+                        .or_insert(EGraph::new(ObsEquiv { pts: $pts.to_vec() }).with_explanations_enabled())
+                );
             }
         }
     };
@@ -231,7 +259,7 @@ impl<'a> Enumerator<'a> {
     fn grow(&mut self, pts: &[(HashMap<String, bool>, bool)]) {
         let size = self.current_size + 1;
         let mut new_expressions = HashMap::new();
-    
+
         if size == 1 {
             for prod in &self.grammar.productions {
                 let mut egraph = EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled();
@@ -243,9 +271,17 @@ impl<'a> Enumerator<'a> {
                         // };
                         let is_terminal = |lc: &BoolLanguage| match lc {
                             BoolLanguage::Const(_) | BoolLanguage::Var(_) => true,
-                            _ => false,
+                            _ => false
                         };
-                        handle_language_construct!(lang_construct, egraph, new_expressions, prod, size, pts, is_terminal);
+                        handle_language_construct!(
+                            lang_construct,
+                            egraph,
+                            new_expressions,
+                            prod,
+                            size,
+                            pts,
+                            is_terminal
+                        );
                     }
                 }
             }
@@ -260,8 +296,14 @@ impl<'a> Enumerator<'a> {
                                 for right_enode in right_egraph.classes() {
                                     // println!("Merging left and right egraphs:");
                                     let mut new_egraph = left_egraph.clone().with_explanations_enabled();
-                                    let left_mapping: HashMap<_, _> = left_egraph.classes().map(|c| (c.id, new_egraph.add_expr(&left_egraph.id_to_expr(c.id)))).collect();
-                                    let right_mapping: HashMap<_, _> = right_egraph.classes().map(|c| (c.id, new_egraph.add_expr(&right_egraph.id_to_expr(c.id)))).collect();
+                                    let left_mapping: HashMap<_, _> = left_egraph
+                                        .classes()
+                                        .map(|c| (c.id, new_egraph.add_expr(&left_egraph.id_to_expr(c.id))))
+                                        .collect();
+                                    let right_mapping: HashMap<_, _> = right_egraph
+                                        .classes()
+                                        .map(|c| (c.id, new_egraph.add_expr(&right_egraph.id_to_expr(c.id))))
+                                        .collect();
                                     // println!("Left egraph:");
                                     // pretty_egraph(&new_egraph);
                                     // println!("Right egraph:");
@@ -289,16 +331,42 @@ impl<'a> Enumerator<'a> {
                                                 // ArithLanguage::Or(_) => handle_binary_op!(ArithLanguage::Or, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
                                                 // ArithLanguage::Xor(_) => handle_binary_op!(ArithLanguage::Xor, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
                                                 // ArithLanguage::And(_) => handle_binary_op!(ArithLanguage::And, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
-                                                BoolLanguage::And(_) => handle_binary_op!(BoolLanguage::And, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
-                                                BoolLanguage::Or(_) => handle_binary_op!(BoolLanguage::Or, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
+                                                BoolLanguage::And(_) => handle_binary_op!(
+                                                    BoolLanguage::And,
+                                                    left_mapping,
+                                                    right_mapping,
+                                                    new_egraph,
+                                                    new_expressions,
+                                                    prod,
+                                                    size,
+                                                    pts
+                                                ),
+                                                BoolLanguage::Or(_) => handle_binary_op!(
+                                                    BoolLanguage::Or,
+                                                    left_mapping,
+                                                    right_mapping,
+                                                    new_egraph,
+                                                    new_expressions,
+                                                    prod,
+                                                    size,
+                                                    pts
+                                                ),
                                                 BoolLanguage::Not(_) => {
-                                                    let mut unary_egraph = new_egraph.clone().with_explanations_enabled();
+                                                    let mut unary_egraph =
+                                                        new_egraph.clone().with_explanations_enabled();
                                                     for eclass in new_egraph.classes() {
-                                                        let new_id = unary_egraph.add_expr(&new_egraph.id_to_expr(eclass.id));
+                                                        let new_id =
+                                                            unary_egraph.add_expr(&new_egraph.id_to_expr(eclass.id));
                                                         let expr = BoolLanguage::Not([new_id]);
                                                         unary_egraph.add(expr);
                                                     }
-                                                    merge_egraphs(&unary_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
+                                                    merge_egraphs(
+                                                        &unary_egraph,
+                                                        &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(
+                                                            EGraph::new(ObsEquiv { pts: pts.to_vec() })
+                                                                .with_explanations_enabled()
+                                                        )
+                                                    );
                                                 }
                                                 _ => {}
                                             }
@@ -315,7 +383,7 @@ impl<'a> Enumerator<'a> {
         for (key, egraph) in new_expressions {
             self.cache.entry(key).or_insert(egraph);
         }
-    
+
         self.current_size = size;
     }
 
@@ -357,7 +425,7 @@ impl<'a> Enumerator<'a> {
 }
 
 struct EggSolver {
-    grammar: Grammar,
+    grammar: Grammar
 }
 
 impl EggSolver {
@@ -365,12 +433,52 @@ impl EggSolver {
         EggSolver { grammar }
     }
 
-    fn synthesize(&self, max_size: usize, pts: &[(HashMap<String, bool>, bool)]) -> Option<RecExpr<BoolLanguage>> {
+    fn synthesize(
+        &self,
+        max_size: usize,
+        pts: &mut Vec<(HashMap<String, bool>, bool)>,
+        var_names: &[String],
+        custom_fn: &dyn Fn(&HashMap<String, bool>) -> bool
+    ) -> Option<RecExpr<BoolLanguage>> {
         let mut enumerator = Enumerator::new(&self.grammar);
+        let cfg = Config::new();
+        let ctx = Context::new(&cfg);
+
         for size in 1..=max_size {
             let exprs = enumerator.enumerate(size, pts);
-            if let Some(expr) = exprs.into_iter().next() {
-                return Some(expr);
+            for expr in exprs {
+                println!("Checking expression: {}", expr.pretty(100));
+                // let var_names: Vec<String> = expr
+                //     .as_ref()
+                //     // .clone()
+                //     .into_iter()
+                //     .filter_map(|node| match node {
+                //         BoolLanguage::Var(name) => Some(name.to_owned()),
+                //         _ => None,
+                //     })
+                //     .collect();
+                let var_map: HashMap<String, Bool> = var_names
+                    .iter()
+                    .map(|var| (var.clone(), Bool::new_const(&ctx, var.as_str())))
+                    .collect();
+
+                if pts.is_empty() {
+                    let mut counter_example = HashMap::new();
+                    for var in var_names {
+                        counter_example.insert(var.clone(), false);
+                    }
+                    pts.push((counter_example.clone(), custom_fn(&counter_example)));
+                    if let Err(updated_counter_example) = verify_expression(&expr, &var_map, &ctx, custom_fn) {
+                        pts.pop();
+                        pts.push((updated_counter_example.clone(), custom_fn(&updated_counter_example)));
+                    }
+                } else {
+                    if let Err(counter_example) = verify_expression(&expr, &var_map, &ctx, custom_fn) {
+                        pts.push((counter_example.clone(), custom_fn(&counter_example)));
+                    } else {
+                        return Some(expr);
+                    }
+                }
             }
         }
         None
@@ -493,106 +601,131 @@ impl EggSolver {
 //         println!("No expression could be synthesized.");
 //     }
 // }
-#[test]
-fn test_bool_1() {
-    let grammar = Grammar {
-        productions: vec![
-            Production {
-                lhs: "Start".to_string(),
-                lhs_type: "Bool".to_string(),
-                rhs: vec![
-                    ProdComponent::LhsName("Start".to_string()),
-                    ProdComponent::LanguageConstruct(BoolLanguage::And(Default::default())),
-                    ProdComponent::LhsName("Start".to_string()),
-                ]
-            },
-            Production {
-                lhs: "Start".to_string(),
-                lhs_type: "Bool".to_string(),
-                rhs: vec![
-                    ProdComponent::LanguageConstruct(BoolLanguage::Not(Default::default())),
-                    ProdComponent::LhsName("Start".to_string()),
-                ]
-            },
-            Production {
-                lhs: "Start".to_string(),
-                lhs_type: "Bool".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Var("a".to_string()))]
-            },
-            Production {
-                lhs: "Start".to_string(),
-                lhs_type: "Bool".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Var("b".to_string()))]
-            },
-        ]
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::vec;
+    use egg::{
+        rewrite as rw,
+        *
     };
+    
+    #[test]
+    fn test_bool_1() {
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "Start".to_string(),
+                    lhs_type: "Bool".to_string(),
+                    rhs: vec![
+                        ProdComponent::LhsName("Start".to_string()),
+                        ProdComponent::LanguageConstruct(BoolLanguage::And(Default::default())),
+                        ProdComponent::LhsName("Start".to_string()),
+                    ]
+                },
+                Production {
+                    lhs: "Start".to_string(),
+                    lhs_type: "Bool".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(BoolLanguage::Not(Default::default())),
+                        ProdComponent::LhsName("Start".to_string()),
+                    ]
+                },
+                Production {
+                    lhs: "Start".to_string(),
+                    lhs_type: "Bool".to_string(),
+                    rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Var(
+                        "a".to_string()
+                    ))]
+                },
+                Production {
+                    lhs: "Start".to_string(),
+                    lhs_type: "Bool".to_string(),
+                    rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Var(
+                        "b".to_string()
+                    ))]
+                },
+            ]
+        }; // correct: ((Start Bool ((and Start Start) (not Start) a b))))
 
-    let custom_fn = |inputs: &HashMap<String, bool>| inputs["a"] | inputs["b"];
+        let custom_fn = |inputs: &HashMap<String, bool>| inputs["a"] | inputs["b"];
 
-    let solver = EggSolver::new(grammar);
-    let max_size = 5;
-    let mut pts = vec![];
+        let var_names = vec!["a".to_string(), "b".to_string()];
+        let solver = EggSolver::new(grammar);
+        let max_size = 5;
+        let mut pts = vec![];
 
-    if let Some(expr) = solver.synthesize(max_size, &pts) {
-        println!("Found matching expression: {}", expr.pretty(100));
-    } else {
-        println!("No matching expression found.");
+        if let Some(expr) = solver.synthesize(max_size, &mut pts, &var_names, &custom_fn) {
+            println!("Found matching expression: {}", expr.pretty(100));
+        } else {
+            println!("No matching expression found.");
+            assert!(false)
+        }
     }
-}
 
-#[test]
-fn test_bool_2() {
-    let grammar = Grammar {
-        productions: vec![
-            Production {
-                lhs: "Start".to_string(),
-                lhs_type: "Bool".to_string(),
-                rhs: vec![
-                    ProdComponent::LhsName("Start".to_string()),
-                    ProdComponent::LanguageConstruct(BoolLanguage::And(Default::default())),
-                    ProdComponent::LhsName("Start".to_string()),
-                ]
-            },
-            Production {
-                lhs: "Start".to_string(),
-                lhs_type: "Bool".to_string(),
-                rhs: vec![
-                    ProdComponent::LanguageConstruct(BoolLanguage::Not(Default::default())),
-                    ProdComponent::LhsName("Start".to_string()),
-                ]
-            },
-            Production {
-                lhs: "Start".to_string(),
-                lhs_type: "Bool".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Var("a".to_string()))]
-            },
-            Production {
-                lhs: "Start".to_string(),
-                lhs_type: "Bool".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Var("b".to_string()))]
-            },
-            Production {
-                lhs: "Start".to_string(),
-                lhs_type: "Bool".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Var("c".to_string()))]
-            },
-        ]
-    };
+    #[test]
+    fn test_bool_2() {
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "Start".to_string(),
+                    lhs_type: "Bool".to_string(),
+                    rhs: vec![
+                        ProdComponent::LhsName("Start".to_string()),
+                        ProdComponent::LanguageConstruct(BoolLanguage::And(Default::default())),
+                        ProdComponent::LhsName("Start".to_string()),
+                    ]
+                },
+                Production {
+                    lhs: "Start".to_string(),
+                    lhs_type: "Bool".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(BoolLanguage::Not(Default::default())),
+                        ProdComponent::LhsName("Start".to_string()),
+                    ]
+                },
+                Production {
+                    lhs: "Start".to_string(),
+                    lhs_type: "Bool".to_string(),
+                    rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Var(
+                        "a".to_string()
+                    ))]
+                },
+                Production {
+                    lhs: "Start".to_string(),
+                    lhs_type: "Bool".to_string(),
+                    rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Var(
+                        "b".to_string()
+                    ))]
+                },
+                Production {
+                    lhs: "Start".to_string(),
+                    lhs_type: "Bool".to_string(),
+                    rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Var(
+                        "c".to_string()
+                    ))]
+                },
+            ]
+        };
 
-    let custom_fn = |inputs: &HashMap<String, bool>| {
-        let a = inputs["a"];
-        let b = inputs["b"];
-        let c = inputs["c"];
-        (a | b) | c
-    };
+        let custom_fn = |inputs: &HashMap<String, bool>| {
+            let a = inputs["a"];
+            let b = inputs["b"];
+            let c = inputs["c"];
+            (a | b) | c
+        };
 
-    let solver = EggSolver::new(grammar);
-    let max_size = 7;
-    let mut pts = vec![];
+        let var_names = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let solver = EggSolver::new(grammar);
+        let max_size = 7;
+        let mut pts = vec![];
 
-    if let Some(expr) = solver.synthesize(max_size, &pts) {
-        println!("Found matching expression: {}", expr.pretty(100));
-    } else {
-        println!("No matching expression found.");
+        if let Some(expr) = solver.synthesize(max_size, &mut pts, &var_names, &custom_fn) {
+            println!("Found matching expression: {}", expr.pretty(100));
+        } else {
+            println!("No matching expression found.");
+            assert!(false);
+        }
     }
 }
