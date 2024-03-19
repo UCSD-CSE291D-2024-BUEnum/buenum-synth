@@ -1,13 +1,7 @@
 use std::collections::HashMap;
-use std::{
-    cell::RefCell,
-    vec
-};
+use std::vec;
 
-use egg::{
-    rewrite as rw,
-    *
-};
+use egg::{rewrite as rw, *};
 
 define_language! {
     pub enum ArithLanguage {
@@ -24,25 +18,25 @@ type ProdName = String;
 struct Production {
     lhs: ProdName,
     lhs_type: String,
-    rhs: Vec<ProdComponent>
+    rhs: Vec<ProdComponent>,
 }
 
 #[derive(Debug, Clone)]
 enum ProdComponent {
     LhsName(ProdName),
-    LanguageConstruct(ArithLanguage)
+    LanguageConstruct(ArithLanguage),
 }
 
 #[derive(Debug, Clone)]
 struct Grammar {
-    productions: Vec<Production>
+    productions: Vec<Production>,
 }
 
 struct Enumerator<'a> {
     grammar: &'a Grammar,
     runner: Runner<ArithLanguage, ()>,
     cache: HashMap<(ProdName, usize), EGraph<ArithLanguage, ()>>,
-    current_size: usize
+    current_size: usize,
 }
 
 impl<'a> Enumerator<'a> {
@@ -51,7 +45,7 @@ impl<'a> Enumerator<'a> {
             grammar,
             runner: Runner::default(),
             cache: HashMap::new(),
-            current_size: 0
+            current_size: 0,
         }
     }
 
@@ -68,7 +62,6 @@ impl<'a> Enumerator<'a> {
                             ArithLanguage::Num(n) => {
                                 let mut egraph = EGraph::new(()).with_explanations_enabled();
                                 egraph.add(lang_construct.clone());
-                                // egraph.rebuild();
                                 new_expressions.insert((prod.lhs.clone(), size), egraph);
                             }
                             _ => {}
@@ -79,45 +72,35 @@ impl<'a> Enumerator<'a> {
         } else {
             // Composite expressions
             for prod in &self.grammar.productions {
+                let mut egraph = EGraph::new(()).with_explanations_enabled();
                 for left_size in 1..size {
                     let right_size = size - left_size;
                     if let Some(left_egraph) = self.cache.get(&(prod.lhs.clone(), left_size)) {
                         if let Some(right_egraph) = self.cache.get(&(prod.lhs.clone(), right_size)) {
-                            for left_ec in left_egraph.classes() {
-                                for right_ec in right_egraph.classes() {
-                                    let left_id = left_ec.id;
-                                    let right_id = right_ec.id;
-                                    let mut egraph = EGraph::new(()).with_explanations_enabled();
-                                    // Add the operation based on production rule
+                            for left_enode in left_egraph.classes() {
+                                for right_enode in right_egraph.classes() {
                                     for component in &prod.rhs {
                                         if let ProdComponent::LanguageConstruct(lang_construct) = component {
                                             match lang_construct {
                                                 ArithLanguage::Add(_) => {
-                                                    egraph.add(ArithLanguage::Add([left_id, right_id]));
+                                                    egraph.add(ArithLanguage::Add([left_enode.id, right_enode.id]));
                                                 }
                                                 ArithLanguage::Sub(_) => {
-                                                    egraph.add(ArithLanguage::Sub([left_id, right_id]));
+                                                    egraph.add(ArithLanguage::Sub([left_enode.id, right_enode.id]));
                                                 }
                                                 ArithLanguage::Mul(_) => {
-                                                    egraph.add(ArithLanguage::Mul([left_id, right_id]));
+                                                    egraph.add(ArithLanguage::Mul([left_enode.id, right_enode.id]));
                                                 }
-                                                _ => unreachable!()
+                                                _ => {}
                                             }
                                         }
                                     }
-                                    new_expressions
-                                        .entry((prod.lhs.clone(), size))
-                                        .or_insert_with(|| EGraph::new(()).with_explanations_enabled())
-                                        .egraph_union(&egraph);
-                                    // new_expressions
-                                    //     .entry((prod.lhs.clone(), size))
-                                    //     .or_insert_with(|| EGraph::new(()).with_explanations_enabled())
-                                    //     .rebuild();
                                 }
                             }
                         }
                     }
                 }
+                new_expressions.insert((prod.lhs.clone(), size), egraph);
             }
         }
 
@@ -137,11 +120,10 @@ impl<'a> Enumerator<'a> {
         // Access the cache directly for expressions of the given size.
         // This ensures we only collect expressions that match the size criteria.
         let mut result = Vec::new();
-        for ((prod_name, expr_size), egraph) in &self.cache {
+        for ((_, expr_size), egraph) in &self.cache {
             if *expr_size == size {
                 for eclass in egraph.classes() {
-                    let id = eclass.id;
-                    let expr = egraph.id_to_expr(id);
+                    let expr = egraph.id_to_expr(eclass.id);
                     result.push(expr);
                 }
             }
@@ -160,7 +142,7 @@ fn main() {
                     ProdComponent::LhsName("S".to_string()),
                     ProdComponent::LanguageConstruct(ArithLanguage::Add(Default::default())),
                     ProdComponent::LhsName("S".to_string()),
-                ]
+                ],
             },
             Production {
                 lhs: "S".to_string(),
@@ -169,7 +151,7 @@ fn main() {
                     ProdComponent::LhsName("S".to_string()),
                     ProdComponent::LanguageConstruct(ArithLanguage::Sub(Default::default())),
                     ProdComponent::LhsName("S".to_string()),
-                ]
+                ],
             },
             Production {
                 lhs: "S".to_string(),
@@ -178,27 +160,26 @@ fn main() {
                     ProdComponent::LhsName("S".to_string()),
                     ProdComponent::LanguageConstruct(ArithLanguage::Mul(Default::default())),
                     ProdComponent::LhsName("S".to_string()),
-                ]
+                ],
             },
             Production {
                 lhs: "S".to_string(),
                 lhs_type: "Num".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(0))]
+                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(0))],
             },
             Production {
                 lhs: "S".to_string(),
                 lhs_type: "Num".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(1))]
+                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(1))],
             },
             Production {
                 lhs: "S".to_string(),
                 lhs_type: "Num".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(2))]
+                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(2))],
             },
-        ]
+        ],
     };
 
-    // let enumerator = RefCell::new(Enumerator::new(&grammar));
     let mut enumerator = Enumerator::new(&grammar);
     let max_size = 5; // Adjust this value based on the depth of enumeration you desire
 
