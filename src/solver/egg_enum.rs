@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::vec;
 
-use egg::{rewrite as rw, *};
+use egg::{
+    rewrite as rw,
+    *
+};
 
 define_language! {
     pub enum ArithLanguage {
@@ -18,25 +21,40 @@ type ProdName = String;
 struct Production {
     lhs: ProdName,
     lhs_type: String,
-    rhs: Vec<ProdComponent>,
+    rhs: Vec<ProdComponent>
 }
 
 #[derive(Debug, Clone)]
 enum ProdComponent {
     LhsName(ProdName),
-    LanguageConstruct(ArithLanguage),
+    LanguageConstruct(ArithLanguage)
 }
 
 #[derive(Debug, Clone)]
 struct Grammar {
-    productions: Vec<Production>,
+    productions: Vec<Production>
 }
 
 struct Enumerator<'a> {
     grammar: &'a Grammar,
     runner: Runner<ArithLanguage, ()>,
     cache: HashMap<(ProdName, usize), EGraph<ArithLanguage, ()>>,
-    current_size: usize,
+    current_size: usize
+}
+
+// target_egrraph.egraph_union(&source_egraph); // TODO: Error in library function implementation
+fn merge_egraphs<L: Language, N: Analysis<L>>(source_egraph: &EGraph<L, N>, target_egraph: &mut EGraph<L, N>) {
+    // Iterate through all e-classes in the source e-graph
+    for id in source_egraph.classes().map(|e| e.id) {
+        // Convert each e-class id to a representative expression
+        let expr = source_egraph.id_to_expr(id);
+        
+        // Add the expression to the target e-graph
+        target_egraph.add_expr(&expr);
+    }
+    
+    // Rebuild the target e-graph to restore invariants
+    target_egraph.rebuild();
 }
 
 impl<'a> Enumerator<'a> {
@@ -45,70 +63,85 @@ impl<'a> Enumerator<'a> {
             grammar,
             runner: Runner::default(),
             cache: HashMap::new(),
-            current_size: 0,
+            current_size: 0
         }
     }
 
     fn grow(&mut self) {
         let size = self.current_size + 1;
         let mut new_expressions = HashMap::new();
-
+    
         // Base case: directly add numbers for size 1
         if size == 1 {
             for prod in &self.grammar.productions {
+                let mut egraph = EGraph::new(()).with_explanations_enabled();
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
                         match lang_construct {
-                            ArithLanguage::Num(n) => {
-                                let mut egraph = EGraph::new(()).with_explanations_enabled();
+                            ArithLanguage::Num(_) => {
                                 egraph.add(lang_construct.clone());
-                                new_expressions.insert((prod.lhs.clone(), size), egraph);
+                                merge_egraphs(&egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()));
                             }
                             _ => {}
                         }
                     }
                 }
             }
+            // println!("New expressions: {:?}", new_expressions);
         } else {
             // Composite expressions
             for prod in &self.grammar.productions {
-                let mut egraph = EGraph::new(()).with_explanations_enabled();
+                // let mut egraph = EGraph::new(()).with_explanations_enabled();
                 for left_size in 1..size {
                     let right_size = size - left_size;
                     if let Some(left_egraph) = self.cache.get(&(prod.lhs.clone(), left_size)) {
                         if let Some(right_egraph) = self.cache.get(&(prod.lhs.clone(), right_size)) {
                             for left_enode in left_egraph.classes() {
                                 for right_enode in right_egraph.classes() {
+                                    let mut new_egraph = left_egraph.clone();
+                                    // new_egraph.egraph_union(right_egraph);
+                                    merge_egraphs(right_egraph, &mut new_egraph);
                                     for component in &prod.rhs {
                                         if let ProdComponent::LanguageConstruct(lang_construct) = component {
                                             match lang_construct {
                                                 ArithLanguage::Add(_) => {
-                                                    egraph.add(ArithLanguage::Add([left_enode.id, right_enode.id]));
+                                                    let expr = ArithLanguage::Add([left_enode.id, right_enode.id]);
+                                                    new_egraph.add(expr);
+                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()));
+                                                    // new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()).add(expr);
                                                 }
                                                 ArithLanguage::Sub(_) => {
-                                                    egraph.add(ArithLanguage::Sub([left_enode.id, right_enode.id]));
+                                                    let expr = ArithLanguage::Sub([left_enode.id, right_enode.id]);
+                                                    new_egraph.add(expr);
+                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()));
+                                                    // new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()).add(expr);
                                                 }
                                                 ArithLanguage::Mul(_) => {
-                                                    egraph.add(ArithLanguage::Mul([left_enode.id, right_enode.id]));
+                                                    let expr = ArithLanguage::Mul([left_enode.id, right_enode.id]);
+                                                    new_egraph.add(expr);
+                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()));
+                                                    // new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()).add(expr);
                                                 }
                                                 _ => {}
                                             }
+                                            // new_expressions.insert((prod.lhs.clone(), size), new_egraph.clone());
                                         }
                                     }
+                                    // println!("New expressions: {:?}", new_expressions);
                                 }
                             }
                         }
                     }
                 }
-                new_expressions.insert((prod.lhs.clone(), size), egraph);
+                // new_expressions.insert((prod.lhs.clone(), size), egraph);
             }
         }
-
+        // println!("New expressions Finally: {:?}", new_expressions);
         // Update cache with new expressions
         for (key, egraph) in new_expressions {
-            self.cache.insert(key, egraph);
+            self.cache.entry(key).or_insert(egraph);
         }
-
+    
         self.current_size = size;
     }
 
@@ -142,7 +175,7 @@ fn main() {
                     ProdComponent::LhsName("S".to_string()),
                     ProdComponent::LanguageConstruct(ArithLanguage::Add(Default::default())),
                     ProdComponent::LhsName("S".to_string()),
-                ],
+                ]
             },
             Production {
                 lhs: "S".to_string(),
@@ -151,7 +184,7 @@ fn main() {
                     ProdComponent::LhsName("S".to_string()),
                     ProdComponent::LanguageConstruct(ArithLanguage::Sub(Default::default())),
                     ProdComponent::LhsName("S".to_string()),
-                ],
+                ]
             },
             Production {
                 lhs: "S".to_string(),
@@ -160,28 +193,28 @@ fn main() {
                     ProdComponent::LhsName("S".to_string()),
                     ProdComponent::LanguageConstruct(ArithLanguage::Mul(Default::default())),
                     ProdComponent::LhsName("S".to_string()),
-                ],
+                ]
             },
             Production {
                 lhs: "S".to_string(),
                 lhs_type: "Num".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(0))],
+                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(0))]
             },
             Production {
                 lhs: "S".to_string(),
                 lhs_type: "Num".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(1))],
+                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(1))]
             },
             Production {
                 lhs: "S".to_string(),
                 lhs_type: "Num".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(2))],
+                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(2))]
             },
-        ],
+        ]
     };
 
     let mut enumerator = Enumerator::new(&grammar);
-    let max_size = 5; // Adjust this value based on the depth of enumeration you desire
+    let max_size = 3; // Adjust this value based on the depth of enumeration you desire
 
     for size in 1..=max_size {
         println!("Enumerating programs of size {}", size);
