@@ -7,15 +7,26 @@ use z3::{Context, FuncDecl};
 use crate::parser::{ast, ast::*};
 
 use super::{GrammarTrait, ProgTrait};
-
 define_language! {
-    pub enum Language {
+    pub enum EggExpr {
+        "const_bool" = ConstBool(bool),
+        "const_int" = ConstInt(i64),
+        "const_bv" = ConstBitVec(u64),
+        "const_string" = ConstString(String),
+        "var" = Var((Symbol, Sort)),
+        "not" = Not(Box<EggExpr>),
+        "and" = And((Box<EggExpr>, Box<EggExpr>)),
+        // ... other binary and unary operators ...
+        "func_apply" = FuncApply((Symbol, Vec<Id>)),
+    }
+}
+define_language! {
+    pub enum SyGuSLang {
         ConstBool(bool),
         ConstInt(i64),
         ConstBitVec(u64),
         ConstString(String),
-        // Var(ast::Symbol, ast::Sort), // TODO: unsupported multiple arguments with no pattern matching
-        // FuncApply([Id; 2]),
+        Var(ast::Symbol), // TODO: unsupported multiple arguments with no pattern matching
         "not" = Not([Id; 1]),
         "and" = And([Id; 2]),
         "or" = Or([Id; 2]),
@@ -36,37 +47,75 @@ define_language! {
         "bvneg" = BvNeg([Id; 1]), // Negation
         "bvult" = BvUlt([Id; 2]),  // Unsigned less than
         // BvConst(u64, u32),
+
+        FuncApply(ast::Symbol, Vec<Id>),
     }
 }
-impl Language {
-    fn from_expr(enode: &Language) -> Expr {
-        match enode {
-            Language::ConstBool(b) => Expr::ConstBool(*b),
-            Language::ConstInt(i) => Expr::ConstInt(*i),
-            Language::ConstBitVec(u) => Expr::ConstBitVec(*u),
-            Language::ConstString(s) => Expr::ConstString(s.clone()),
-            // Language::Var(symbol, sort) => Expr::Var(symbol.clone(), sort.clone()),
-            // Language::FuncApply(ids) => Expr::FuncApply(ids.clone()), // TODO: id to expr
-            Language::Not(id) => Expr::Not(*id),
-            Language::And(ids) => Expr::And(ids.clone()),
-            Language::Or(ids) => Expr::Or(ids.clone()),
-            Language::Xor(ids) => Expr::Xor(ids.clone()),
-            Language::Iff(ids) => Expr::Iff(ids.clone()),
-            Language::Equal(ids) => Expr::Equal(ids.clone()),
-            Language::BvAnd(ids) => Expr::BvAnd(ids.clone()),
-            Language::BvOr(ids) => Expr::BvOr(ids.clone()),
-            Language::BvXor(ids) => Expr::BvXor(ids.clone()),
-            Language::BvNot(id) => Expr::BvNot(*id),
-            Language::BvAdd(ids) => Expr::BvAdd(ids.clone()),
-            Language::BvMul(ids) => Expr::BvMul(ids.clone()),
-            Language::BvSub(ids) => Expr::BvSub(ids.clone()),
-            Language::BvUdiv(ids) => Expr::BvUdiv(ids.clone()),
-            Language::BvUrem(ids) => Expr::BvUrem(ids.clone()),
-            Language::BvShl(ids) => Expr::BvShl(ids.clone()),
-            Language::BvLshr(ids) => Expr::BvLshr(ids.clone()),
-            Language::BvNeg(id) => Expr::BvNeg(*id),
-            Language::BvUlt(ids) => Expr::BvUlt(ids.clone()),
-            // Language::BvConst(u, n) => Expr::BvConst(*u, *n),
+
+impl SyGuSLang {
+    // fn to_expr(enode: &SyGuSLang) -> Expr {
+    //     match enode {
+    //         SyGuSLang::ConstBool(b) => Expr::ConstBool(*b),
+    //         SyGuSLang::ConstInt(i) => Expr::ConstInt(*i),
+    //         SyGuSLang::ConstBitVec(u) => Expr::ConstBitVec(*u),
+    //         SyGuSLang::ConstString(s) => Expr::ConstString(s.clone()),
+    //         SyGuSLang::Var(symbol) => Expr::Var(symbol.clone(), Sort::Bool),
+    //         SyGuSLang::Not(id) => Expr::Not(*id),
+    //         SyGuSLang::And(ids) => Expr::And(ids.clone()),
+    //         SyGuSLang::Or(ids) => Expr::Or(ids.clone()),
+    //         SyGuSLang::Xor(ids) => Expr::Xor(ids.clone()),
+    //         SyGuSLang::Iff(ids) => Expr::Iff(ids.clone()),
+    //         SyGuSLang::Equal(ids) => Expr::Equal(ids.clone()),
+    //         SyGuSLang::BvAnd(ids) => Expr::BvAnd(ids.clone()),
+    //         SyGuSLang::BvOr(ids) => Expr::BvOr(ids.clone()),
+    //         SyGuSLang::BvXor(ids) => Expr::BvXor(ids.clone()),
+    //         SyGuSLang::BvNot(id) => Expr::BvNot(*id),
+    //         SyGuSLang::BvAdd(ids) => Expr::BvAdd(ids.clone()),
+    //         SyGuSLang::BvMul(ids) => Expr::BvMul(ids.clone()),
+    //         SyGuSLang::BvSub(ids) => Expr::BvSub(ids.clone()),
+    //         SyGuSLang::BvUdiv(ids) => Expr::BvUdiv(ids.clone()),
+    //         SyGuSLang::BvUrem(ids) => Expr::BvUrem(ids.clone()),
+    //         SyGuSLang::BvShl(ids) => Expr::BvShl(ids.clone()),
+    //         SyGuSLang::BvLshr(ids) => Expr::BvLshr(ids.clone()),
+    //         SyGuSLang::BvNeg(id) => Expr::BvNeg(*id),
+    //         SyGuSLang::BvUlt(ids) => Expr::BvUlt(ids.clone()),
+    //         // SyGuSLang::BvConst(u, n) => Expr::BvConst(*u, *n),
+    //         SyGuSLang::FuncApply(name, ids) => Expr::FuncApply(name.clone(), ids.clone()),
+    //     }
+    // }
+    fn from_expr(expr: &ast::Expr) -> SyGuSLang {
+        let expr = format!("{:?}", expr);
+        let expr: SyGuSLang = expr.parse().unwrap();
+
+        match expr {
+            ast::Expr::ConstBool(b) => SyGuSLang::ConstBool(*b),
+            ast::Expr::ConstInt(i) => SyGuSLang::ConstInt(*i),
+            ast::Expr::ConstBitVec(u) => SyGuSLang::ConstBitVec(*u),
+            ast::Expr::ConstString(s) => SyGuSLang::ConstString(s.clone()),
+            ast::Expr::Var(symbol, _) => SyGuSLang::Var(symbol.clone()),
+            ast::Expr::Not(expr) => {
+                let expr = expr.clone();
+                SyGuSLang::Not()
+            }
+            ast::Expr::And(ids) => SyGuSLang::And([ids[0], ids[1]]),
+            ast::Expr::Or(ids) => SyGuSLang::Or([ids[0], ids[1]]),
+            ast::Expr::Xor(ids) => SyGuSLang::Xor([ids[0], ids[1]]),
+            ast::Expr::Iff(ids) => SyGuSLang::Iff([ids[0], ids[1]]),
+            ast::Expr::Equal(ids) => SyGuSLang::Equal([ids[0], ids[1]]),
+            ast::Expr::BvAnd(ids) => SyGuSLang::BvAnd([ids[0], ids[1]]),
+            ast::Expr::BvOr(ids) => SyGuSLang::BvOr([ids[0], ids[1]]),
+            ast::Expr::BvXor(ids) => SyGuSLang::BvXor([ids[0], ids[1]]),
+            ast::Expr::BvNot(id) => SyGuSLang::BvNot([*id]),
+            ast::Expr::BvAdd(ids) => SyGuSLang::BvAdd([ids[0], ids[1]]),
+            ast::Expr::BvMul(ids) => SyGuSLang::BvMul([ids[0], ids[1]]),
+            ast::Expr::BvSub(ids) => SyGuSLang::BvSub([ids[0], ids[1]]),
+            ast::Expr::BvUdiv(ids) => SyGuSLang::BvUdiv([ids[0], ids[1]]),
+            ast::Expr::BvUrem(ids) => SyGuSLang::BvUrem([ids[0], ids[1]]),
+            ast::Expr::BvShl(ids) => SyGuSLang::BvShl([ids[0], ids[1]]),
+            ast::Expr::BvLshr(ids) => SyGuSLang::BvLshr([ids[0], ids[1]]),
+            ast::Expr::BvNeg(id) => SyGuSLang::BvNeg([*id]),
+            ast::Expr::BvUlt(ids) => SyGuSLang::BvUlt([ids[0], ids[1]]),
+            ast::Expr::FuncApply(name, ids) => SyGuSLang::FuncApply(name.clone(), ids.clone()),
         }
     }
 }
@@ -99,7 +148,7 @@ struct EggSolver;
 struct ObsEquiv {
     pts: Vec<HashMap<String, Expr>>,
 }
-impl Analysis<Language> for ObsEquiv {
+impl Analysis<SyGuSLang> for ObsEquiv {
     type Data = Vec<Expr>;
 
     fn merge(&mut self, to: &mut Self::Data, from: Self::Data) -> DidMerge {
@@ -118,78 +167,78 @@ impl Analysis<Language> for ObsEquiv {
         }
     }
 
-    fn make(egraph: &EGraph<Language, Self>, enode: &Language) -> Self::Data {
+    fn make(egraph: &EGraph<SyGuSLang, Self>, enode: &SyGuSLang) -> Self::Data {
         let x = |i: &Id| &egraph[*i].data;
         match enode {
-            Language::ConstBool(b) => vec![Expr::ConstBool(*b)],
-            Language::ConstInt(i) => vec![Expr::ConstInt(*i)],
-            Language::ConstBitVec(u) => vec![Expr::ConstBitVec(*u)],
-            Language::ConstString(s) => vec![Expr::ConstString(s.clone())],
-            Language::Var([sym, sort]) => vec![Expr::Var(sym.to_string(), sort.clone())],
-            Language::GFuncApply([name, args]) => {
+            SyGuSLang::ConstBool(b) => vec![Expr::ConstBool(*b)],
+            SyGuSLang::ConstInt(i) => vec![Expr::ConstInt(*i)],
+            SyGuSLang::ConstBitVec(u) => vec![Expr::ConstBitVec(*u)],
+            SyGuSLang::ConstString(s) => vec![Expr::ConstString(s.clone())],
+            SyGuSLang::Var([sym, sort]) => vec![Expr::Var(sym.to_string(), sort.clone())],
+            SyGuSLang::GFuncApply([name, args]) => {
                 let args_expr: Vec<GExpr> = args.iter().map(|&id| x(&id)[0].clone()).collect();
                 vec![GExpr::GFuncApply(name.to_string(), args_expr)]
             }
-            Language::FuncApply([name, args]) => {
+            SyGuSLang::FuncApply([name, args]) => {
                 let args_expr: Vec<GExpr> = args.iter().map(|&id| x(&id)[0].clone()).collect();
                 vec![GExpr::FuncApply(name.to_string(), args_expr)]
             }
-            Language::Not([arg]) => vec![Expr::Not(Box::new(x(arg)[0].clone()))],
-            Language::And([left, right]) => {
+            SyGuSLang::Not([arg]) => vec![Expr::Not(Box::new(x(arg)[0].clone()))],
+            SyGuSLang::And([left, right]) => {
                 vec![Expr::And(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::Or([left, right]) => {
+            SyGuSLang::Or([left, right]) => {
                 vec![Expr::Or(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::Xor([left, right]) => {
+            SyGuSLang::Xor([left, right]) => {
                 vec![Expr::Xor(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::Iff([left, right]) => {
+            SyGuSLang::Iff([left, right]) => {
                 vec![Expr::Iff(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::Equal([left, right]) => {
+            SyGuSLang::Equal([left, right]) => {
                 vec![Expr::Equal(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvAnd([left, right]) => {
+            SyGuSLang::BvAnd([left, right]) => {
                 vec![Expr::BvAnd(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvOr([left, right]) => {
+            SyGuSLang::BvOr([left, right]) => {
                 vec![Expr::BvOr(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvXor([left, right]) => {
+            SyGuSLang::BvXor([left, right]) => {
                 vec![Expr::BvXor(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvNot([arg]) => vec![Expr::BvNot(Box::new(x(arg)[0].clone()))],
-            Language::BvAdd([left, right]) => {
+            SyGuSLang::BvNot([arg]) => vec![Expr::BvNot(Box::new(x(arg)[0].clone()))],
+            SyGuSLang::BvAdd([left, right]) => {
                 vec![Expr::BvAdd(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvMul([left, right]) => {
+            SyGuSLang::BvMul([left, right]) => {
                 vec![Expr::BvMul(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvSub([left, right]) => {
+            SyGuSLang::BvSub([left, right]) => {
                 vec![Expr::BvSub(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvUdiv([left, right]) => {
+            SyGuSLang::BvUdiv([left, right]) => {
                 vec![Expr::BvUdiv(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvUrem([left, right]) => {
+            SyGuSLang::BvUrem([left, right]) => {
                 vec![Expr::BvUrem(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvShl([left, right]) => {
+            SyGuSLang::BvShl([left, right]) => {
                 vec![Expr::BvShl(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvLshr([left, right]) => {
+            SyGuSLang::BvLshr([left, right]) => {
                 vec![Expr::BvLshr(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvNeg([arg]) => vec![Expr::BvNeg(Box::new(x(arg)[0].clone()))],
-            Language::BvUlt([left, right]) => {
+            SyGuSLang::BvNeg([arg]) => vec![Expr::BvNeg(Box::new(x(arg)[0].clone()))],
+            SyGuSLang::BvUlt([left, right]) => {
                 vec![Expr::BvUlt(Box::new(x(left)[0].clone()), Box::new(x(right)[0].clone()))]
             }
-            Language::BvConst(val, width) => vec![Expr::BvConst(*val, *width)],
+            SyGuSLang::BvConst(val, width) => vec![Expr::BvConst(*val, *width)],
         }
     }
 
-    fn modify(egraph: &mut EGraph<Language, Self>, id: Id) {
+    fn modify(egraph: &mut EGraph<SyGuSLang, Self>, id: Id) {
         if let obs_equiv_data = egraph[id].data.clone() {
             if let Some(added_expr) = obs_equiv_data.first() {
                 let added = egraph.add(added_expr.clone());
@@ -243,7 +292,7 @@ impl SolverTrait for EggSolver {
         let g = self.extract_grammar(p, func_name);
 
         let runner = RefCell::new(
-            Runner::<Language, ObsEquiv, ()>::default()
+            Runner::<SyGuSLang, ObsEquiv, ()>::default()
                 .with_iter_limit(10) // Set the iteration limit
                 .with_time_limit(std::time::Duration::from_secs(60)), // Set the time limit
         );
@@ -281,7 +330,7 @@ struct EggEnumerator<'a> {
     prog: &'a SyGuSProg,
     grammar: &'a GrammarDef,
     pts: &'a [HashMap<String, Expr>],
-    runner: &'a RefCell<Runner<Language, ObsEquiv, ()>>,
+    runner: &'a RefCell<Runner<SyGuSLang, ObsEquiv, ()>>,
     cache: HashMap<(ProdName, usize), Vec<GExpr>>,
     current_size: usize,
 }
@@ -295,7 +344,7 @@ impl<'a> Enumerator for EggEnumerator<'a> {
         prog: &'a SyGuSProg,
         grammar: &'a GrammarDef,
         pts: &'a [HashMap<String, Expr>],
-        runner: &'a RefCell<Runner<Language, ObsEquiv, ()>>,
+        runner: &'a RefCell<Runner<SyGuSLang, ObsEquiv, ()>>,
     ) -> Self {
         EggEnumerator {
             prog,
@@ -339,5 +388,22 @@ impl<'a> Enumerator for EggEnumerator<'a> {
                 return None;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::parse;
+    use std::fs;
+
+    #[test]
+    fn test_synthesize() {
+        env_logger::init();
+        let content = fs::read_to_string("examples/and.sygus").unwrap();
+        let prog = parse(&content).unwrap();
+        let solver = EggSolver;
+        let expr = solver.synthesize(&prog, "and");
+        assert_eq!(expr, Some(Expr::And(Box::new(Expr::Var("x".to_string(), Sort::Bool)), Box::new(Expr::Var("y".to_string(), Sort::Bool)))));
     }
 }
