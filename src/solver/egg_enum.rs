@@ -5,6 +5,7 @@ use egg::{
     rewrite as rw,
     *
 };
+use strum_macros::Display;
 
 define_language! {
     pub enum ArithLanguage {
@@ -35,10 +36,45 @@ struct Grammar {
     productions: Vec<Production>
 }
 
+#[derive(Default, Debug, Clone)]
+struct ObsEquiv {
+    pts: Vec<HashMap<String, i32>>,
+}
+
+impl Analysis<ArithLanguage> for ObsEquiv {
+    type Data = i32;
+
+    fn merge(&mut self, to: &mut Self::Data, from: Self::Data) -> DidMerge {
+        if *to != from {
+            *to = from;
+            DidMerge(true, false)
+        } else {
+            DidMerge(false, false)
+        }
+    }
+
+    fn make(egraph: &EGraph<ArithLanguage, Self>, enode: &ArithLanguage) -> Self::Data {
+        let x = |i: &Id| egraph[*i].data;
+        match enode {
+            ArithLanguage::Num(n) => *n,
+            ArithLanguage::Add([a, b]) => x(a) + x(b),
+            ArithLanguage::Sub([a, b]) => x(a) - x(b),
+            ArithLanguage::Mul([a, b]) => x(a) * x(b),
+        }
+    }
+
+    fn modify(egraph: &mut EGraph<ArithLanguage, Self>, id: Id) {
+        if let n = egraph[id].data {
+            let added = egraph.add(ArithLanguage::Num(n));
+            egraph.union(id, added);
+        }
+    }
+}
+
 struct Enumerator<'a> {
     grammar: &'a Grammar,
-    runner: Runner<ArithLanguage, ()>,
-    cache: HashMap<(ProdName, usize), EGraph<ArithLanguage, ()>>,
+    runner: Runner<ArithLanguage, ObsEquiv>,
+    cache: HashMap<(ProdName, usize), EGraph<ArithLanguage, ObsEquiv>>,
     current_size: usize
 }
 
@@ -46,15 +82,19 @@ struct Enumerator<'a> {
 fn merge_egraphs<L: Language, N: Analysis<L>>(source_egraph: &EGraph<L, N>, target_egraph: &mut EGraph<L, N>) {
     // Iterate through all e-classes in the source e-graph
     for id in source_egraph.classes().map(|e| e.id) {
-        // Convert each e-class id to a representative expression
         let expr = source_egraph.id_to_expr(id);
-        
-        // Add the expression to the target e-graph
         target_egraph.add_expr(&expr);
     }
-    
-    // Rebuild the target e-graph to restore invariants
     target_egraph.rebuild();
+}
+
+fn pretty_egraph<L: Language, N: Analysis<L>>(egraph: &EGraph<L, N>) 
+where L: std::fmt::Display
+{
+    println!("EGraph size: {}", egraph.number_of_classes());
+    for class in egraph.classes() {
+        println!("Class {}: {:?} [{}]", class.id, egraph[class.id].data, egraph.id_to_expr(class.id).pretty(80));
+    }
 }
 
 impl<'a> Enumerator<'a> {
@@ -67,31 +107,28 @@ impl<'a> Enumerator<'a> {
         }
     }
 
-    fn grow(&mut self) {
+    fn grow(&mut self, pts: &[HashMap<String, i32>]) {
         let size = self.current_size + 1;
         let mut new_expressions = HashMap::new();
     
-        // Base case: directly add numbers for size 1
         if size == 1 {
             for prod in &self.grammar.productions {
-                let mut egraph = EGraph::new(()).with_explanations_enabled();
+                let mut egraph = EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled();
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
                         match lang_construct {
                             ArithLanguage::Num(_) => {
                                 egraph.add(lang_construct.clone());
-                                merge_egraphs(&egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()));
+                                merge_egraphs(&egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
                             }
                             _ => {}
                         }
                     }
                 }
             }
-            // println!("New expressions: {:?}", new_expressions);
+            pretty_egraph(&new_expressions[&("S".to_string(), 1)]);
         } else {
-            // Composite expressions
             for prod in &self.grammar.productions {
-                // let mut egraph = EGraph::new(()).with_explanations_enabled();
                 for left_size in 1..size {
                     let right_size = size - left_size;
                     if let Some(left_egraph) = self.cache.get(&(prod.lhs.clone(), left_size)) {
@@ -99,7 +136,6 @@ impl<'a> Enumerator<'a> {
                             for left_enode in left_egraph.classes() {
                                 for right_enode in right_egraph.classes() {
                                     let mut new_egraph = left_egraph.clone();
-                                    // new_egraph.egraph_union(right_egraph);
                                     merge_egraphs(right_egraph, &mut new_egraph);
                                     for component in &prod.rhs {
                                         if let ProdComponent::LanguageConstruct(lang_construct) = component {
@@ -107,37 +143,30 @@ impl<'a> Enumerator<'a> {
                                                 ArithLanguage::Add(_) => {
                                                     let expr = ArithLanguage::Add([left_enode.id, right_enode.id]);
                                                     new_egraph.add(expr);
-                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()));
-                                                    // new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()).add(expr);
+                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
                                                 }
                                                 ArithLanguage::Sub(_) => {
                                                     let expr = ArithLanguage::Sub([left_enode.id, right_enode.id]);
                                                     new_egraph.add(expr);
-                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()));
-                                                    // new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()).add(expr);
+                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
                                                 }
                                                 ArithLanguage::Mul(_) => {
                                                     let expr = ArithLanguage::Mul([left_enode.id, right_enode.id]);
                                                     new_egraph.add(expr);
-                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()));
-                                                    // new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(()).with_explanations_enabled()).add(expr);
+                                                    merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
                                                 }
                                                 _ => {}
                                             }
-                                            // new_expressions.insert((prod.lhs.clone(), size), new_egraph.clone());
                                         }
                                     }
-                                    // println!("New expressions: {:?}", new_expressions);
                                 }
                             }
                         }
                     }
                 }
-                // new_expressions.insert((prod.lhs.clone(), size), egraph);
             }
+            pretty_egraph(&new_expressions[&("S".to_string(), size)]);
         }
-        // println!("New expressions Finally: {:?}", new_expressions);
-        // Update cache with new expressions
         for (key, egraph) in new_expressions {
             self.cache.entry(key).or_insert(egraph);
         }
@@ -145,23 +174,61 @@ impl<'a> Enumerator<'a> {
         self.current_size = size;
     }
 
-    fn enumerate(&mut self, size: usize) -> Vec<RecExpr<ArithLanguage>> {
+    fn enumerate(&mut self, size: usize, pts: &[HashMap<String, i32>]) -> Vec<RecExpr<ArithLanguage>> {
         while self.current_size < size {
-            self.grow();
+            self.grow(pts);
         }
 
-        // Access the cache directly for expressions of the given size.
-        // This ensures we only collect expressions that match the size criteria.
         let mut result = Vec::new();
         for ((_, expr_size), egraph) in &self.cache {
             if *expr_size == size {
                 for eclass in egraph.classes() {
                     let expr = egraph.id_to_expr(eclass.id);
-                    result.push(expr);
+                    if self.satisfies_counter_examples(&expr, pts) {
+                        result.push(expr);
+                    }
                 }
             }
         }
         result
+    }
+
+    fn satisfies_counter_examples(&self, expr: &RecExpr<ArithLanguage>, pts: &[HashMap<String, i32>]) -> bool {
+        for pt in pts {
+            if !self.satisfies_counter_example(expr, pt) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn satisfies_counter_example(&self, expr: &RecExpr<ArithLanguage>, pt: &HashMap<String, i32>) -> bool {
+        let mut egraph = EGraph::new(ObsEquiv { pts: vec![pt.clone()] });
+        let id = egraph.add_expr(expr);
+        egraph.rebuild();
+        let value = egraph[id].data;
+        pt.values().all(|&v| v == value)
+    }
+}
+
+struct EggSolver {
+    grammar: Grammar,
+}
+
+impl EggSolver {
+    fn new(grammar: Grammar) -> Self {
+        EggSolver { grammar }
+    }
+
+    fn synthesize(&self, max_size: usize, pts: &[HashMap<String, i32>]) -> Option<RecExpr<ArithLanguage>> {
+        let mut enumerator = Enumerator::new(&self.grammar);
+        for size in 1..=max_size {
+            let exprs = enumerator.enumerate(size, pts);
+            if let Some(expr) = exprs.into_iter().next() {
+                return Some(expr);
+            }
+        }
+        None
     }
 }
 
@@ -213,18 +280,19 @@ fn main() {
         ]
     };
 
-    let mut enumerator = Enumerator::new(&grammar);
-    let max_size = 3; // Adjust this value based on the depth of enumeration you desire
+    let solver = EggSolver::new(grammar);
+    let max_size = 3;
 
-    for size in 1..=max_size {
-        println!("Enumerating programs of size {}", size);
-        let exprs = enumerator.enumerate(size);
-        for expr in exprs {
-            println!("{}", expr.pretty(100));
-        }
-        println!(); // Just to have a clear separation for each size's output
+    let pts = vec![
+        HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]),
+        HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]),
+    ];
+
+    if let Some(expr) = solver.synthesize(max_size, &pts) {
+        println!("Synthesized expression: {}", expr.pretty(100));
+    } else {
+        println!("No expression could be synthesized.");
     }
-    println!("Done!");
 }
 
 #[cfg(test)]
