@@ -14,6 +14,10 @@ define_language! {
         "+" = Add([Id; 2]),
         "-" = Sub([Id; 2]),
         "*" = Mul([Id; 2]),
+        "|" = Or([Id; 1]),
+        "&" = And([Id; 2]),
+        "^" = Xor([Id; 2]),
+        "<<" = Shl([Id; 2]),
         "neg" = Neg([Id; 1]),
     }
 }
@@ -72,6 +76,10 @@ impl Analysis<ArithLanguage> for ObsEquiv {
             ArithLanguage::Add([a, b]) => x(a) + x(b),
             ArithLanguage::Sub([a, b]) => x(a) - x(b),
             ArithLanguage::Mul([a, b]) => x(a) * x(b),
+            ArithLanguage::Shl([a, b]) => x(a) << x(b),
+            ArithLanguage::Or([a, b]) => x(a) << x(b),
+            ArithLanguage::And([a, b]) => x(a) << x(b),
+            ArithLanguage::Xor([a, b]) => x(a) << x(b),
         }
     }
 
@@ -195,6 +203,10 @@ impl<'a> Enumerator<'a> {
                                                 ArithLanguage::Add(_) => handle_binary_op!(ArithLanguage::Add, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
                                                 ArithLanguage::Sub(_) => handle_binary_op!(ArithLanguage::Sub, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
                                                 ArithLanguage::Mul(_) => handle_binary_op!(ArithLanguage::Mul, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
+                                                ArithLanguage::Mul(_) => handle_binary_op!(ArithLanguage::Shl, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
+                                                ArithLanguage::Mul(_) => handle_binary_op!(ArithLanguage::Or, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
+                                                ArithLanguage::Mul(_) => handle_binary_op!(ArithLanguage::Xor, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
+                                                ArithLanguage::Mul(_) => handle_binary_op!(ArithLanguage::And, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
                                                 _ => {}
                                             }
                                         }
@@ -299,6 +311,42 @@ fn main() {
                 rhs: vec![
                     ProdComponent::LhsName("S".to_string()),
                     ProdComponent::LanguageConstruct(ArithLanguage::Mul(Default::default())),
+                    ProdComponent::LhsName("S".to_string()),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LhsName("S".to_string()),
+                    ProdComponent::LanguageConstruct(ArithLanguage::Shl(Default::default())),
+                    ProdComponent::LhsName("S".to_string()),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LhsName("S".to_string()),
+                    ProdComponent::LanguageConstruct(ArithLanguage::And(Default::default())),
+                    ProdComponent::LhsName("S".to_string()),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LhsName("S".to_string()),
+                    ProdComponent::LanguageConstruct(ArithLanguage::Or(Default::default())),
+                    ProdComponent::LhsName("S".to_string()),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LhsName("S".to_string()),
+                    ProdComponent::LanguageConstruct(ArithLanguage::Xor(Default::default())),
                     ProdComponent::LhsName("S".to_string()),
                 ]
             },
