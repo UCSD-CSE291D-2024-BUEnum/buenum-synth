@@ -4,6 +4,7 @@ use egg::{
     rewrite as rw,
     *
 };
+use std::fmt;
 use itertools::Itertools;
 
 define_language! {
@@ -82,12 +83,15 @@ impl<'a> Enumerator<'a> {
                             for left_expr in left_exprs {
                                 for right_expr in right_exprs {
                                     let mut expr = RecExpr::default();
-                                    // Reconstruct the left and right expressions within the new expression
-                                    let lhs_id = expr.add(ArithLanguage::Num(0)); // Placeholder, will be replaced
-                                    let rhs_id = expr.add(ArithLanguage::Num(0)); // Placeholder, will be replaced
-                                    expr[lhs_id] = left_expr.as_ref()[0].clone();
-                                    expr[rhs_id] = right_expr.as_ref()[0].clone();
-
+                                    // Clone and add all nodes from left_expr to the new expr
+                                    let lhs_ids: Vec<Id> = left_expr.as_ref().iter().map(|node| expr.add(node.clone())).collect();
+                                    // Clone and add all nodes from right_expr to the new expr
+                                    let rhs_ids: Vec<Id> = right_expr.as_ref().iter().map(|node| expr.add(node.clone())).collect();
+            
+                                    // Use the last ids from lhs_ids and rhs_ids for the arithmetic operation
+                                    let lhs_id = *lhs_ids.last().unwrap();
+                                    let rhs_id = *rhs_ids.last().unwrap();
+            
                                     // Add the operation based on production rule
                                     match prod.rhs.first().unwrap() {
                                         ProdComponent::LanguageConstruct(ArithLanguage::Add(_)) => {
@@ -101,7 +105,7 @@ impl<'a> Enumerator<'a> {
                                         },
                                         _ => {}
                                     }
-
+            
                                     new_expressions.entry((prod.lhs.clone(), size))
                                                    .or_insert_with(Vec::new)
                                                    .push(expr);
@@ -190,7 +194,7 @@ fn main() {
     };
 
     let mut enumerator = Enumerator::new(&grammar);
-    let max_size = 4; // Adjust this value based on the depth of enumeration you desire
+    let max_size = 3; // Adjust this value based on the depth of enumeration you desire
 
     for size in 1..=max_size {
         println!("Enumerating programs of size {}", size);
