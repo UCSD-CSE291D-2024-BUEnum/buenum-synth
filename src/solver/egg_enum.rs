@@ -98,21 +98,26 @@ impl<'a> Enumerator<'a> {
                                             match lang_construct {
                                                 ArithLanguage::Add(_) => {
                                                     expr.add(ArithLanguage::Add([lhs_id, rhs_id]));
+                                                    new_expressions.entry((prod.lhs.clone(), size))
+                                                                   .or_insert_with(HashSet::new)
+                                                                   .insert(expr.clone());
                                                 },
                                                 ArithLanguage::Sub(_) => {
                                                     expr.add(ArithLanguage::Sub([lhs_id, rhs_id]));
+                                                    new_expressions.entry((prod.lhs.clone(), size))
+                                                                   .or_insert_with(HashSet::new)
+                                                                   .insert(expr.clone());
                                                 },
                                                 ArithLanguage::Mul(_) => {
                                                     expr.add(ArithLanguage::Mul([lhs_id, rhs_id]));
+                                                    new_expressions.entry((prod.lhs.clone(), size))
+                                                                   .or_insert_with(HashSet::new)
+                                                                   .insert(expr.clone());
                                                 },
                                                 _ => {}
                                             }
                                         }
                                     }
-    
-                                    new_expressions.entry((prod.lhs.clone(), size))
-                                                   .or_insert_with(HashSet::new)
-                                                   .insert(expr);
                                 }
                             }
                         }
@@ -198,19 +203,26 @@ fn main() {
     };
 
     let mut enumerator = Enumerator::new(&grammar);
-    let max_size = 3; // Adjust this value based on the depth of enumeration you desire
+    let max_size = 5; // Adjust this value based on the depth of enumeration you desire
 
     for size in 1..=max_size {
         println!("Enumerating programs of size {}", size);
         let programs = enumerator.enumerate(size);
+        let mut count = 3;
         for program in &programs {
             println!("{}", program.pretty(100));
+            if count == 0 {
+                println!("... {} in total", programs.len());
+                break;
+            } else {
+                count -= 1;
+            }
         }
         println!(); // Just to have a clear separation for each size's output
     }
     println!("Done!");
     println!("Total number of programs enumerated: {}", enumerator.cache.values().map(|s| s.len()).sum::<usize>());
-    println!("Cache contents:");
+    // println!("Cache contents:");
     // for (key, value) in &enumerator.cache {
     //     println!("Key: {:?}, Value: {:?}", key, value);
     // }
