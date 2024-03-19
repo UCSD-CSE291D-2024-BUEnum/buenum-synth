@@ -29,8 +29,9 @@ pub struct BaselineEnumerator<'a, S: Solver> {
     grammar: &'a S::Grammar,
     counterexamples: &'a Vec<BaselineCounterExample>,
     cache: HashMap<(ProdName, usize), Vec<GExpr>>,
-    current_size: usize,
-    index: usize,
+    current_size: usize,    // height of current candidates (starting from 0)
+    index: usize,           // index of current candidate accross all non-terminals
+    candidates: Vec<GExpr>, // list of all candidates (accross non-terminals) with the current size
     oe_cache: HashMap<String, Vec<BaselineCounterExample>>, // To be hashable, String is the format!() of candicate expression
 }
 
@@ -109,6 +110,7 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             cache: HashMap::new(),
             current_size: 0,
             index: 0,
+            candidates: Vec::new(),
             oe_cache: HashMap::new(),
         }
     }
@@ -131,7 +133,7 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                     let env = EvalEnv {
                         vars: vars,
                         funcs: Vec::new(),
-                    }; // TODO: unsure whether funcs should be empty
+                    };
                     let val = gexpr.to_expr().eval(&env);
                     input_output.push(BaselineCounterExample {
                         assignment: cex.assignment.clone(),
@@ -190,7 +192,12 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
     fn permutation(&self, prod_name: &ProdName, expr: &GExpr, father: &GExpr, d: usize) -> Vec<GExpr> {
         let mut ret: Vec<GExpr> = Vec::new();
         if d == 0 {
-            ret.extend(self.cache.get(&(prod_name.clone(), 0)).unwrap().clone());
+            match self.cache.get(&(prod_name.clone(), 0)) {
+                Some(expressions) => {
+                    ret.extend(expressions.clone());
+                }
+                None => {}
+            }
             return ret;
         }
         match expr {
@@ -204,7 +211,14 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                                     return ret;
                                 }
                             }
-                            _ => ret.extend(self.cache.get(&(lhs.clone(), d)).unwrap().clone()),
+
+                            _ => match self.cache.get(&(lhs.clone(), d)) {
+                                // prevent empty cache with d
+                                Some(expressions) => {
+                                    ret.extend(expressions.clone());
+                                }
+                                None => {}
+                            },
                         }
                     }
                 }
@@ -223,8 +237,12 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                         match &subs[k] {
                             GExpr::Var(symbol, _) => {
                                 if self.grammar.lhs_names().contains(&symbol) {
-                                    permutation_result
-                                        .extend(self.cache.get(&(symbol.clone(), d_i[k])).unwrap().clone())
+                                    match self.cache.get(&(symbol.clone(), d_i[k])) {
+                                        Some(expressions) => {
+                                            permutation_result.extend(expressions.clone());
+                                        }
+                                        None => {}
+                                    }
                                 } else {
                                     permutation_result.push(subs[k].clone())
                                 }
@@ -353,51 +371,32 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
     type Item = Expr;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // TODO: need to rewrite this function
         loop {
-            for non_terminal in self.grammar.non_terminals().iter().map(|p| &p.lhs) {
-                match self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                    Some(expressions) => {
-                        if self.index >= expressions.len() {
-                            self.current_size += 1;
-                            self.index = 0;
-                            continue;
+            // grow
+            if self.index >= self.candidates.len() {
+                for non_terminal in self.grammar.non_terminals().iter().map(|p| &p.lhs) {
+                    self.grow(non_terminal);
+                    // add new candidates to the global candidate list
+                    match self.cache.get(&(non_terminal.clone(), self.current_size)) {
+                        Some(expressions) => {
+                            self.candidates.extend(expressions.clone());
                         }
-                        let program = &expressions[self.index];
-                        self.index += 1;
-                        if self.index == expressions.len() {
-                            self.current_size += 1;
-                        }
-                        // if the program matches any counterexamples, skip it
-                        if match_any_io(
-                            self.oe_cache.get(&format!("{:?}", program)).unwrap(),
-                            self.counterexamples,
-                        ) {
-                            continue;
-                        }
-                        return Option::from(program.to_expr());
+                        None => {}
                     }
-                    None => {
-                        self.grow(non_terminal);
-                        if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                            if self.index >= expressions.len() {
-                                self.current_size += 1;
-                                self.index = 0;
-                                continue;
-                            }
-                            self.index = 0;
-                            let program = &expressions[self.index];
-                            self.index += 1;
-                            // if the program matches any counterexamples, skip it
-                            if match_any_io(
-                                self.oe_cache.get(&format!("{:?}", program)).unwrap(),
-                                self.counterexamples,
-                            ) {
-                                continue;
-                            }
-                            return Option::from(program.to_expr());
-                        }
-                    }
+                }
+                self.current_size += 1;
+                self.index = 0;
+            }
+
+            while self.index < self.candidates.len() {
+                let program = &self.candidates[self.index];
+                self.index += 1;
+                if !match_any_io(
+                    // does not match any counter-example
+                    self.oe_cache.get(&format!("{:?}", program)).unwrap(),
+                    self.counterexamples,
+                ) {
+                    return Option::from(program.to_expr());
                 }
             }
         }
