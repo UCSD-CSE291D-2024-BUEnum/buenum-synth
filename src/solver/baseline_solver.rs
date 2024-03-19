@@ -152,7 +152,9 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                 self.oe_cache.insert(format!("{:?}", gexpr.clone()), input_output);
                 rem_terms.push(gexpr);
             }
-            self.cache.entry((non_terminal.clone(), size)).or_insert(rem_terms);
+            if rem_terms.len() != 0 {
+                self.cache.entry((non_terminal.clone(), size)).or_insert(rem_terms);
+            }
         }
     }
 
@@ -351,6 +353,7 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
     type Item = Expr;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // TODO: need to rewrite this function
         loop {
             for non_terminal in self.grammar.non_terminals().iter().map(|p| &p.lhs) {
                 match self.cache.get(&(non_terminal.clone(), self.current_size)) {
