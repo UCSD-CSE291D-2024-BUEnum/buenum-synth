@@ -377,6 +377,11 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
                     None => {
                         self.grow(non_terminal);
                         if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
+                            if self.index >= expressions.len() {
+                                self.current_size += 1;
+                                self.index = 0;
+                                continue;
+                            }
                             self.index = 0;
                             let program = &expressions[self.index];
                             self.index += 1;
