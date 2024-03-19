@@ -1,13 +1,12 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use crate::solver::baseline_solver::BaselineSolver;
 use std::fs;
 use std::time::Instant;
-use crate::solver::baseline_solver::BaselineSolver;
 
 mod parser;
 mod solver;
-
 
 fn main() {
     #![allow(warnings)]
@@ -15,7 +14,7 @@ fn main() {
     let test_name = "AIG";
     let contents = fs::read_to_string(&test_path).unwrap();
     let parsed = parser::parse(&contents).unwrap();
-    let solver = BaselineSolver{};
+    let solver = BaselineSolver {};
     let start = Instant::now();
     let program = solver::Solver::synthesize(&solver, &parsed, &test_name);
     let duration = start.elapsed();

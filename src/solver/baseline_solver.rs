@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use z3::ast::Ast;
 
 use crate::parser::ast::*;
-use crate::solver::GrammarTrait;
-use crate::solver::Solver;
 use crate::parser::eval::EvalEnv;
 use crate::parser::eval::Value;
+use crate::solver::GrammarTrait;
+use crate::solver::Solver;
 
 use super::ProgTrait;
 
@@ -35,7 +35,7 @@ pub struct BaselineEnumerator<'a, S: Solver> {
 }
 
 /// DFS to search all the possible depth combination of sub non-terminals
-pub fn depth_of_subs(d: usize, k: usize, ans: &mut Vec<Vec<usize>>, curr: &mut Vec<usize>){
+pub fn depth_of_subs(d: usize, k: usize, ans: &mut Vec<Vec<usize>>, curr: &mut Vec<usize>) {
     if k == 0 {
         if d == 1 {
             ans.push(curr.clone());
@@ -45,19 +45,25 @@ pub fn depth_of_subs(d: usize, k: usize, ans: &mut Vec<Vec<usize>>, curr: &mut V
     for i in 0..d {
         curr.push(i);
         depth_of_subs(d - i, k - 1, ans, curr);
-        curr.remove(curr.len()-1);
+        curr.remove(curr.len() - 1);
     }
 }
 
-fn argument(term_vec: &Vec<Vec<GExpr>>, visited: &Vec<Vec<bool>>, i: usize, curr: &mut Vec<GExpr>, ret: &mut Vec<Vec<GExpr>>){
+fn argument(
+    term_vec: &Vec<Vec<GExpr>>,
+    visited: &Vec<Vec<bool>>,
+    i: usize,
+    curr: &mut Vec<GExpr>,
+    ret: &mut Vec<Vec<GExpr>>,
+) {
     if i == term_vec.len() {
         ret.push(curr.clone());
     } else {
         for j in 0..term_vec[i].len() {
             if !visited[i][j] {
                 curr.push((&term_vec[i][j]).clone());
-                argument(term_vec, visited, i+1, curr, ret);
-                curr.remove(curr.len()-1);
+                argument(term_vec, visited, i + 1, curr, ret);
+                curr.remove(curr.len() - 1);
             }
         }
     }
@@ -120,10 +126,17 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                 // compute this input-output
                 let mut input_output: Vec<BaselineCounterExample> = Vec::new();
                 for cex in self.counterexamples {
-                    let vars: Vec<(String, Value)> = cex.assignment.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                    let env = EvalEnv{vars: vars, funcs: Vec::new()}; // TODO: unsure whether funcs should be empty
+                    let vars: Vec<(String, Value)> =
+                        cex.assignment.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                    let env = EvalEnv {
+                        vars: vars,
+                        funcs: Vec::new(),
+                    }; // TODO: unsure whether funcs should be empty
                     let val = gexpr.to_expr().eval(&env);
-                    input_output.push(BaselineCounterExample{assignment: cex.assignment.clone(), output: val});
+                    input_output.push(BaselineCounterExample {
+                        assignment: cex.assignment.clone(),
+                        output: val,
+                    });
                 }
                 // iterate over all candicates to find if there is an oe match
                 let mut match_flag = false;
@@ -136,10 +149,10 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                 if match_flag {
                     continue;
                 }
-                self.oe_cache.insert(format!("{:?}", gexpr.clone()), input_output); 
+                self.oe_cache.insert(format!("{:?}", gexpr.clone()), input_output);
                 rem_terms.push(gexpr);
             }
-            self.cache.entry((non_terminal.clone(), size)).or_insert(rem_terms);            
+            self.cache.entry((non_terminal.clone(), size)).or_insert(rem_terms);
         }
     }
 
@@ -149,18 +162,15 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
         for production in rhs {
             if d == 0 {
                 match production {
-                    GTerm::BfTerm(expr) => {
-                        match expr {
-                            GExpr::ConstBool(_)
-                            | GExpr::ConstInt(_)
-                            | GExpr::ConstBitVec(_)
-                            | GExpr::ConstString(_)
-                            | GExpr::Var(_, _)
-                            | GExpr::BvConst(_, _)
-                            => all_expressions.push(expr.clone()),
-                            _ => {}
-                        }
-                    }
+                    GTerm::BfTerm(expr) => match expr {
+                        GExpr::ConstBool(_)
+                        | GExpr::ConstInt(_)
+                        | GExpr::ConstBitVec(_)
+                        | GExpr::ConstString(_)
+                        | GExpr::Var(_, _)
+                        | GExpr::BvConst(_, _) => all_expressions.push(expr.clone()),
+                        _ => {}
+                    },
                     _ => eprintln!("Unsupported Production Type!"),
                 }
             } else {
@@ -169,14 +179,14 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                         let expr_vec = self.permutation(lhs, expr, &GExpr::UnknownGExpr, d);
                         all_expressions.extend(expr_vec.clone());
                     }
-                    _ => eprintln!("Unsupported Rules!")
+                    _ => eprintln!("Unsupported Rules!"),
                 }
             }
         }
     }
 
     fn permutation(&self, prod_name: &ProdName, expr: &GExpr, father: &GExpr, d: usize) -> Vec<GExpr> {
-        let mut ret: Vec<GExpr>= Vec::new();
+        let mut ret: Vec<GExpr> = Vec::new();
         if d == 0 {
             ret.extend(self.cache.get(&(prod_name.clone(), 0)).unwrap().clone());
             return ret;
@@ -191,16 +201,13 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                                 if name == symbol {
                                     return ret;
                                 }
-                            },
-                            _ => {
-                                ret.extend(self.cache.get(&(lhs.clone(), d)).unwrap().clone())
                             }
+                            _ => ret.extend(self.cache.get(&(lhs.clone(), d)).unwrap().clone()),
                         }
                     }
                 }
-            },
-            GExpr::FuncApply(func_name, subs)
-            | GExpr::GFuncApply(func_name, subs)=> {
+            }
+            GExpr::FuncApply(func_name, subs) | GExpr::GFuncApply(func_name, subs) => {
                 let len = subs.len();
                 let mut depth = Vec::new();
                 depth_of_subs(d, len, &mut depth, &mut Vec::new());
@@ -214,12 +221,13 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                         match &subs[k] {
                             GExpr::Var(symbol, _) => {
                                 if self.grammar.lhs_names().contains(&symbol) {
-                                    permutation_result.extend(self.cache.get(&(symbol.clone(), d_i[k])).unwrap().clone())
+                                    permutation_result
+                                        .extend(self.cache.get(&(symbol.clone(), d_i[k])).unwrap().clone())
                                 } else {
                                     permutation_result.push(subs[k].clone())
                                 }
                             }
-                            _ => eprintln!("There are multiple op in RHS!")
+                            _ => eprintln!("There are multiple op in RHS!"),
                         }
 
                         terms_vec.push(permutation_result.clone());
@@ -233,29 +241,26 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                     final_res.extend(result);
                 }
 
-
                 for res in final_res {
                     match expr {
                         GExpr::FuncApply(_, _) => ret.push(GExpr::FuncApply(func_name.clone(), res.clone())),
                         GExpr::GFuncApply(_, _) => ret.push(GExpr::GFuncApply(func_name.clone(), res.clone())),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
                 }
-            },
-            GExpr::Not(sub)
-            | GExpr::BvNot(sub)
-            | GExpr::BvNeg(sub) => {
-                let terms = self.permutation(prod_name, sub, expr, d-1);
+            }
+            GExpr::Not(sub) | GExpr::BvNot(sub) | GExpr::BvNeg(sub) => {
+                let terms = self.permutation(prod_name, sub, expr, d - 1);
                 for t in terms.iter() {
                     //println!("{:?}", t);
                     match expr {
                         GExpr::Not(sub) => ret.push(GExpr::Not(Box::new(t.clone()))),
                         GExpr::BvNot(sub) => ret.push(GExpr::BvNot(Box::new(t.clone()))),
                         GExpr::BvNeg(sub) => ret.push(GExpr::BvNeg(Box::new(t.clone()))),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
                 }
-            },
+            }
             GExpr::And(l_sub, r_sub)
             | GExpr::Or(l_sub, r_sub)
             | GExpr::Xor(l_sub, r_sub)
@@ -271,8 +276,7 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             | GExpr::BvUrem(l_sub, r_sub)
             | GExpr::BvShl(l_sub, r_sub)
             | GExpr::BvLshr(l_sub, r_sub)
-            | GExpr::BvUlt(l_sub, r_sub)
-            => {
+            | GExpr::BvUlt(l_sub, r_sub) => {
                 let mut depth = Vec::new();
                 depth_of_subs(d, 2, &mut depth, &mut Vec::new());
                 for d_i in depth {
@@ -286,31 +290,53 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                                 GExpr::Or(_, _) => ret.push(GExpr::Or(Box::new(lt.clone()), Box::new(rt.clone()))),
                                 GExpr::Xor(_, _) => ret.push(GExpr::Xor(Box::new(lt.clone()), Box::new(rt.clone()))),
                                 GExpr::Iff(_, _) => ret.push(GExpr::Iff(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::Equal(_, _) => ret.push(GExpr::Equal(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::BvAnd(_, _) => ret.push(GExpr::BvAnd(Box::new(lt.clone()), Box::new(rt.clone()))),
+                                GExpr::Equal(_, _) => {
+                                    ret.push(GExpr::Equal(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
+                                GExpr::BvAnd(_, _) => {
+                                    ret.push(GExpr::BvAnd(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
                                 GExpr::BvOr(_, _) => ret.push(GExpr::BvOr(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::BvXor(_, _) => ret.push(GExpr::BvXor(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::BvAdd(_, _) => ret.push(GExpr::BvAdd(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::BvMul(_, _) => ret.push(GExpr::BvMul(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::BvSub(_, _) => ret.push(GExpr::BvSub(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::BvUdiv(_, _) => ret.push(GExpr::BvUdiv(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::BvUrem(_, _) => ret.push(GExpr::BvUrem(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::BvShl(_, _) => ret.push(GExpr::BvShl(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::BvLshr(_, _) => ret.push(GExpr::BvLshr(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                GExpr::BvUlt(_, _) => ret.push(GExpr::BvUlt(Box::new(lt.clone()), Box::new(rt.clone()))),
-                                _ => unreachable!()
+                                GExpr::BvXor(_, _) => {
+                                    ret.push(GExpr::BvXor(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
+                                GExpr::BvAdd(_, _) => {
+                                    ret.push(GExpr::BvAdd(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
+                                GExpr::BvMul(_, _) => {
+                                    ret.push(GExpr::BvMul(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
+                                GExpr::BvSub(_, _) => {
+                                    ret.push(GExpr::BvSub(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
+                                GExpr::BvUdiv(_, _) => {
+                                    ret.push(GExpr::BvUdiv(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
+                                GExpr::BvUrem(_, _) => {
+                                    ret.push(GExpr::BvUrem(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
+                                GExpr::BvShl(_, _) => {
+                                    ret.push(GExpr::BvShl(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
+                                GExpr::BvLshr(_, _) => {
+                                    ret.push(GExpr::BvLshr(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
+                                GExpr::BvUlt(_, _) => {
+                                    ret.push(GExpr::BvUlt(Box::new(lt.clone()), Box::new(rt.clone())))
+                                }
+                                _ => unreachable!(),
                             }
                         }
                     }
                 }
-            },
+            }
             GExpr::ConstBool(_)
             | GExpr::ConstInt(_)
             | GExpr::ConstBitVec(_)
             | GExpr::ConstString(_)
-            | GExpr::BvConst(_, _) => {},
+            | GExpr::BvConst(_, _) => {}
             GExpr::Let(_, _) => eprintln!("Please implement Let"),
-            _ => eprintln!("Unsupported: {:?}", expr)
+            _ => eprintln!("Unsupported: {:?}", expr),
         }
 
         // println!("\nHere is the result of {:?}, when d = {}!", expr, d);
@@ -326,33 +352,43 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            println!("Cache: {:?}", self.cache);
             for non_terminal in self.grammar.non_terminals().iter().map(|p| &p.lhs) {
-                if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                    let program = &expressions[self.index];
-                    self.index += 1;
-                    if self.index == expressions.len() {
-                        self.current_size += 1;
-                    }
-                    // if the program matches any counterexamples, skip it
-                    if match_any_io(self.oe_cache.get(&format!("{:?}",program)).unwrap(), self.counterexamples) {
-                        continue;
-                    }
-                    println!("{:?}", program.to_expr());
-                    return Option::from(program.to_expr());
-                } else {
-                    self.grow(non_terminal);
-                    if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                        self.index = 0;
-                        let program = &expressions[self.index];
-                        self.index += 1;
-                        // if the program matches any counterexamples, skip it
-                        if match_any_io(self.oe_cache.get(&format!("{:?}",program)).unwrap(), self.counterexamples) {
+                match self.cache.get(&(non_terminal.clone(), self.current_size)) {
+                    Some(expressions) => {
+                        if self.index >= expressions.len() {
+                            self.current_size += 1;
+                            self.index = 0;
                             continue;
                         }
-                        println!("------------Growing------------");
-                        println!("{:?}", program.to_expr());
+                        let program = &expressions[self.index];
+                        self.index += 1;
+                        if self.index == expressions.len() {
+                            self.current_size += 1;
+                        }
+                        // if the program matches any counterexamples, skip it
+                        if match_any_io(
+                            self.oe_cache.get(&format!("{:?}", program)).unwrap(),
+                            self.counterexamples,
+                        ) {
+                            continue;
+                        }
                         return Option::from(program.to_expr());
+                    }
+                    None => {
+                        self.grow(non_terminal);
+                        if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
+                            self.index = 0;
+                            let program = &expressions[self.index];
+                            self.index += 1;
+                            // if the program matches any counterexamples, skip it
+                            if match_any_io(
+                                self.oe_cache.get(&format!("{:?}", program)).unwrap(),
+                                self.counterexamples,
+                            ) {
+                                continue;
+                            }
+                            return Option::from(program.to_expr());
+                        }
                     }
                 }
             }
@@ -371,7 +407,7 @@ impl Solver for BaselineSolver {
         &'a self,
         g: &'a Self::Grammar,
         c: &'a Vec<BaselineCounterExample>,
-    ) -> Box<dyn Iterator<Item=Self::Expr> + 'a> {
+    ) -> Box<dyn Iterator<Item = Self::Expr> + 'a> {
         let enumerator = BaselineEnumerator::new(self, g, c);
         Box::new(enumerator)
     }
@@ -434,12 +470,13 @@ impl Solver for BaselineSolver {
         // add func_name and expr into define_funs
         define_funs.insert(
             func_name.to_string(),
-            self::FuncBody{
-                name:func_name.to_string(),
+            self::FuncBody {
+                name: func_name.to_string(),
                 params: p.get_synth_func(func_name).unwrap().0.params.clone(),
                 ret_sort: p.get_synth_func(func_name).unwrap().0.ret_sort.clone(),
                 body: expr.clone(),
-        });
+            },
+        );
 
         // Add define_funs into solver
         let mut funcs: HashMap<String, z3::RecFuncDecl> = HashMap::new();
@@ -452,7 +489,12 @@ impl Solver for BaselineSolver {
             }
             let domain_references: Vec<&z3::Sort> = domain.iter().collect();
             let f_ret_sort = &define_funs[f_name].ret_sort;
-            let decl = z3::RecFuncDecl::new(&ctx, f_name.clone(), domain_references.as_slice(), &self.sort_to_z3_sort(f_ret_sort, &ctx));
+            let decl = z3::RecFuncDecl::new(
+                &ctx,
+                f_name.clone(),
+                domain_references.as_slice(),
+                &self.sort_to_z3_sort(f_ret_sort, &ctx),
+            );
 
             // add function definition
             let mut args: Vec<z3::ast::Dynamic> = Vec::new();
@@ -465,25 +507,37 @@ impl Solver for BaselineSolver {
                         args.push(z3::ast::Dynamic::from(z3::ast::Int::new_const(&ctx, param.0.clone())));
                     }
                     Sort::BitVec(w) => {
-                        args.push(z3::ast::Dynamic::from(z3::ast::BV::new_const(&ctx, param.0.clone(), w as u32)));
+                        args.push(z3::ast::Dynamic::from(z3::ast::BV::new_const(
+                            &ctx,
+                            param.0.clone(),
+                            w as u32,
+                        )));
                     }
                     Sort::String => {
-                        args.push(z3::ast::Dynamic::from(z3::ast::String::new_const(&ctx, param.0.clone())));
+                        args.push(z3::ast::Dynamic::from(z3::ast::String::new_const(
+                            &ctx,
+                            param.0.clone(),
+                        )));
                     }
                     _ => panic!("Unsupported sort"),
                 }
             }
-            
+
             let args_references: Vec<&dyn z3::ast::Ast> = args.iter().map(|arg| arg as &dyn z3::ast::Ast).collect();
             let mut local_var: HashMap<String, z3::ast::Dynamic> = HashMap::new();
             for param in f_params {
-                local_var.insert(param.0.clone(), match param.1 {
-                    Sort::Bool => z3::ast::Dynamic::from(z3::ast::Bool::new_const(&ctx, param.0.clone())),
-                    Sort::Int => z3::ast::Dynamic::from(z3::ast::Int::new_const(&ctx, param.0.clone())),
-                    Sort::BitVec(w) => z3::ast::Dynamic::from(z3::ast::BV::new_const(&ctx, param.0.clone(), w as u32)),
-                    Sort::String => z3::ast::Dynamic::from(z3::ast::String::new_const(&ctx, param.0.clone())),
-                    _ => panic!("Unsupported sort"),
-                });
+                local_var.insert(
+                    param.0.clone(),
+                    match param.1 {
+                        Sort::Bool => z3::ast::Dynamic::from(z3::ast::Bool::new_const(&ctx, param.0.clone())),
+                        Sort::Int => z3::ast::Dynamic::from(z3::ast::Int::new_const(&ctx, param.0.clone())),
+                        Sort::BitVec(w) => {
+                            z3::ast::Dynamic::from(z3::ast::BV::new_const(&ctx, param.0.clone(), w as u32))
+                        }
+                        Sort::String => z3::ast::Dynamic::from(z3::ast::String::new_const(&ctx, param.0.clone())),
+                        _ => panic!("Unsupported sort"),
+                    },
+                );
             }
             let f_body = &define_funs[f_name].body;
             decl.add_def(&args_references, &*self.expr_to_smt(&f_body, &local_var, &funcs, &ctx));
@@ -496,12 +550,7 @@ impl Solver for BaselineSolver {
         // if any neg(constraint) is sat, a counter-example is found
         let mut clauses: Vec<z3::ast::Bool> = Vec::new();
         for c in constraints {
-            clauses.push(
-                self.expr_to_smt(&c, &vars, &funcs, &ctx)
-                    .as_bool()
-                    .unwrap()
-                    .not(),
-            );
+            clauses.push(self.expr_to_smt(&c, &vars, &funcs, &ctx).as_bool().unwrap().not());
         }
         let clauses_references: Vec<&z3::ast::Bool<'_>> = clauses.iter().collect();
         solver.assert(&z3::ast::Bool::or(&ctx, clauses_references.as_slice()));
@@ -512,7 +561,8 @@ impl Solver for BaselineSolver {
         match solver.check() {
             z3::SatResult::Unsat => None, // no counter-example found
             z3::SatResult::Unknown => panic!("Unknown z3 solver result"),
-            z3::SatResult::Sat => { // return value assignment where at least one of the constraints is violated
+            z3::SatResult::Sat => {
+                // return value assignment where at least one of the constraints is violated
                 let model = solver.get_model().unwrap();
                 let mut assignment: HashMap<String, Value> = HashMap::new();
                 for (name, sort) in declare_vars {
@@ -532,8 +582,14 @@ impl Solver for BaselineSolver {
 
                 let vars: Vec<(String, Value)> = assignment.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 let funcs: Vec<(String, FuncBody)> = define_funs.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                let env = EvalEnv{vars: vars, funcs: funcs};
-                return Some(Self::CounterExample {assignment: assignment, output: expr.eval(&env)});
+                let env = EvalEnv {
+                    vars: vars,
+                    funcs: funcs,
+                };
+                return Some(Self::CounterExample {
+                    assignment: assignment,
+                    output: expr.eval(&env),
+                });
             }
         }
     }
@@ -650,7 +706,6 @@ impl Solver for BaselineSolver {
     }
 }
 
-
 mod tests {
     #![allow(warnings)]
     use std::fs;
@@ -663,9 +718,21 @@ mod tests {
     fn test_permutation_1() {
         let mut ans = Vec::new();
         let mut tmp = Vec::new();
-        depth_of_subs(4,3, &mut ans, &mut tmp);
-        assert_eq!(ans,
-                   [[0, 0, 3], [0, 1, 2], [0, 2, 1], [0, 3, 0], [1, 0, 2], [1, 1, 1], [1, 2, 0], [2, 0, 1], [2, 1, 0], [3, 0, 0]]
+        depth_of_subs(4, 3, &mut ans, &mut tmp);
+        assert_eq!(
+            ans,
+            [
+                [0, 0, 3],
+                [0, 1, 2],
+                [0, 2, 1],
+                [0, 3, 0],
+                [1, 0, 2],
+                [1, 1, 1],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+                [3, 0, 0]
+            ]
         )
     }
 
@@ -673,20 +740,16 @@ mod tests {
     fn test_permutation_2() {
         let mut ans = Vec::new();
         let mut tmp = Vec::new();
-        depth_of_subs(2,2, &mut ans, &mut tmp);
-        assert_eq!(ans,
-                   [[0, 1], [1, 0]]
-        )
+        depth_of_subs(2, 2, &mut ans, &mut tmp);
+        assert_eq!(ans, [[0, 1], [1, 0]])
     }
 
     #[test]
     fn test_permutation_3() {
         let mut ans = Vec::new();
         let mut tmp = Vec::new();
-        depth_of_subs(3,2, &mut ans, &mut tmp);
-        assert_eq!(ans,
-                   [[0, 2], [1, 1], [2, 0]]
-        )
+        depth_of_subs(3, 2, &mut ans, &mut tmp);
+        assert_eq!(ans, [[0, 2], [1, 1], [2, 0]])
     }
 
     #[test]
@@ -698,7 +761,7 @@ mod tests {
     fn test_verify_1() {
         let filename = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), format!("test_bool_1.sl"));
         let input = fs::read_to_string(&filename).unwrap();
-        let prog = match parse(&input){
+        let prog = match parse(&input) {
             Ok(res) => res,
             Err(e) => {
                 panic!("Error parsing file: {}\nError: {:#?}", filename, e);
@@ -734,7 +797,10 @@ mod tests {
         }
 
         // thrid attempt: and a b
-        let expr = Expr::And(Box::from(Expr::Var("a".to_string(), Sort::Bool)), Box::from(Expr::Var("b".to_string(), Sort::Bool)));
+        let expr = Expr::And(
+            Box::from(Expr::Var("a".to_string(), Sort::Bool)),
+            Box::from(Expr::Var("b".to_string(), Sort::Bool)),
+        );
         println!("Expr: {:?}", expr);
         let counter_example = solver.verify(&prog, func_name, &expr);
         match counter_example {
@@ -748,9 +814,9 @@ mod tests {
 
         // fourth attempt: and (not a) b
         let expr = Expr::And(
-                            Box::from(Expr::Not(
-                                Box::from(Expr::Var("a".to_string(), Sort::Bool)))), 
-                            Box::from(Expr::Var("b".to_string(), Sort::Bool)));
+            Box::from(Expr::Not(Box::from(Expr::Var("a".to_string(), Sort::Bool)))),
+            Box::from(Expr::Var("b".to_string(), Sort::Bool)),
+        );
         let counter_example = solver.verify(&prog, func_name, &expr);
         println!("Expr: {:?}", expr);
         match counter_example {
@@ -763,12 +829,10 @@ mod tests {
         }
 
         // fifth attempt (correct): not (and (not a) (not b))
-        let expr = Expr::Not(
-                            Box::from(Expr::And(
-                                Box::from(Expr::Not(
-                                    Box::from(Expr::Var("a".to_string(), Sort::Bool)))), 
-                                Box::from(Expr::Not(
-                                    Box::from(Expr::Var("b".to_string(), Sort::Bool)))))));
+        let expr = Expr::Not(Box::from(Expr::And(
+            Box::from(Expr::Not(Box::from(Expr::Var("a".to_string(), Sort::Bool)))),
+            Box::from(Expr::Not(Box::from(Expr::Var("b".to_string(), Sort::Bool)))),
+        )));
         let counter_example = solver.verify(&prog, func_name, &expr);
         println!("Expr: {:?}", expr);
         match counter_example {
@@ -779,14 +843,13 @@ mod tests {
                 println!("No Counter Example Found!");
             }
         }
-
     }
 
     #[test]
     fn test_verify_2() {
         let filename = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), format!("test_bool_2.sl"));
         let input = fs::read_to_string(&filename).unwrap();
-        let prog = match parse(&input){
+        let prog = match parse(&input) {
             Ok(res) => res,
             Err(e) => {
                 panic!("Error parsing file: {}\nError: {:#?}", filename, e);
@@ -822,7 +885,10 @@ mod tests {
         }
 
         // thrid attempt: and a b
-        let expr = Expr::And(Box::from(Expr::Var("a".to_string(), Sort::Bool)), Box::from(Expr::Var("b".to_string(), Sort::Bool)));
+        let expr = Expr::And(
+            Box::from(Expr::Var("a".to_string(), Sort::Bool)),
+            Box::from(Expr::Var("b".to_string(), Sort::Bool)),
+        );
         println!("Expr: {:?}", expr);
         let counter_example = solver.verify(&prog, func_name, &expr);
         match counter_example {
@@ -836,11 +902,12 @@ mod tests {
 
         // fourth attempt: and (and a b) c
         let expr = Expr::And(
-                            Box::from(Expr::And(
-                                Box::from(Expr::Var("a".to_string(), Sort::Bool)),
-                                Box::from(Expr::Var("b".to_string(), Sort::Bool))),
-                            ), 
-                            Box::from(Expr::Var("c".to_string(), Sort::Bool)));
+            Box::from(Expr::And(
+                Box::from(Expr::Var("a".to_string(), Sort::Bool)),
+                Box::from(Expr::Var("b".to_string(), Sort::Bool)),
+            )),
+            Box::from(Expr::Var("c".to_string(), Sort::Bool)),
+        );
         let counter_example = solver.verify(&prog, func_name, &expr);
         println!("Expr: {:?}", expr);
         match counter_example {
@@ -853,15 +920,13 @@ mod tests {
         }
 
         // fifth attempt (correct): not (and (and (not a) (not b)) (not c))
-        let expr = Expr::Not(
-                            Box::from(Expr::And(
-                                Box::from(Expr::And(
-                                    Box::from(Expr::Not(
-                                        Box::from(Expr::Var("a".to_string(), Sort::Bool)))), 
-                                    Box::from(Expr::Not(
-                                        Box::from(Expr::Var("b".to_string(), Sort::Bool)))))),
-                                Box::from(Expr::Not(
-                                    Box::from(Expr::Var("c".to_string(), Sort::Bool)))))));
+        let expr = Expr::Not(Box::from(Expr::And(
+            Box::from(Expr::And(
+                Box::from(Expr::Not(Box::from(Expr::Var("a".to_string(), Sort::Bool)))),
+                Box::from(Expr::Not(Box::from(Expr::Var("b".to_string(), Sort::Bool)))),
+            )),
+            Box::from(Expr::Not(Box::from(Expr::Var("c".to_string(), Sort::Bool)))),
+        )));
         let counter_example = solver.verify(&prog, func_name, &expr);
         println!("Expr: {:?}", expr);
         match counter_example {
@@ -872,6 +937,5 @@ mod tests {
                 println!("No Counter Example Found!");
             }
         }
-
     }
 }

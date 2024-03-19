@@ -44,7 +44,6 @@ pub trait Solver {
 
         loop {
             let pts = counterexamples.clone();
-            println!("pts: {:?}", pts);
             let mut candidates = self.enumerate(&g, &pts);
             match candidates.next() {
                 Some(expr) => match self.verify(p, func_name, &expr) {
