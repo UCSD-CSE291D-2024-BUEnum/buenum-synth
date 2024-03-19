@@ -10,6 +10,7 @@ use strum_macros::Display;
 define_language! {
     pub enum ArithLanguage {
         Num(i32),
+        Var(String),
         "+" = Add([Id; 2]),
         "-" = Sub([Id; 2]),
         "*" = Mul([Id; 2]),
@@ -38,7 +39,7 @@ struct Grammar {
 
 #[derive(Default, Debug, Clone)]
 struct ObsEquiv {
-    pts: Vec<HashMap<String, i32>>,
+    pts: Vec<(HashMap<String, i32>, i32)>,
 }
 
 impl Analysis<ArithLanguage> for ObsEquiv {
@@ -57,6 +58,15 @@ impl Analysis<ArithLanguage> for ObsEquiv {
         let x = |i: &Id| egraph[*i].data;
         match enode {
             ArithLanguage::Num(n) => *n,
+            ArithLanguage::Var(name) => {
+                let mut sum = 0;
+                for (inputs, output) in &egraph.analysis.pts {
+                    if let Some(value) = inputs.iter().find(|(var, _)| *var == name).map(|(_, val)| *val) {
+                        sum += value;
+                    }
+                }
+                sum
+            }
             ArithLanguage::Add([a, b]) => x(a) + x(b),
             ArithLanguage::Sub([a, b]) => x(a) - x(b),
             ArithLanguage::Mul([a, b]) => x(a) * x(b),
@@ -97,6 +107,29 @@ where L: std::fmt::Display
     }
 }
 
+macro_rules! handle_language_construct {
+    ($lang_construct:expr, $egraph:ident, $new_expressions:ident, $prod:ident, $size:ident, $pts:ident, $is_terminal:expr) => {
+        if $is_terminal($lang_construct) {
+            $egraph.add($lang_construct.clone());
+            merge_egraphs(&$egraph, &mut $new_expressions.entry(($prod.lhs.clone(), $size)).or_insert(EGraph::new(ObsEquiv { pts: $pts.to_vec() }).with_explanations_enabled()));
+        }
+    };
+}
+
+macro_rules! handle_binary_op {
+    ($op:expr, $left_mapping:ident, $right_mapping:ident, $new_egraph:ident, $new_expressions:ident, $prod:ident, $size:ident, $pts:ident) => {
+        for &left_id in $left_mapping.keys() {
+            for &right_id in $right_mapping.keys() {
+                let new_left_id = $left_mapping[&left_id];
+                let new_right_id = $right_mapping[&right_id];
+                let expr = $op([new_left_id, new_right_id]);
+                $new_egraph.add(expr);
+                merge_egraphs(&$new_egraph, &mut $new_expressions.entry(($prod.lhs.clone(), $size)).or_insert(EGraph::new(ObsEquiv { pts: $pts.to_vec() }).with_explanations_enabled()));
+            }
+        }
+    };
+}
+
 impl<'a> Enumerator<'a> {
     fn new(grammar: &'a Grammar) -> Self {
         Enumerator {
@@ -107,7 +140,7 @@ impl<'a> Enumerator<'a> {
         }
     }
 
-    fn grow(&mut self, pts: &[HashMap<String, i32>]) {
+    fn grow(&mut self, pts: &[(HashMap<String, i32>, i32)]) {
         let size = self.current_size + 1;
         let mut new_expressions = HashMap::new();
     
@@ -116,13 +149,11 @@ impl<'a> Enumerator<'a> {
                 let mut egraph = EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled();
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
-                        match lang_construct {
-                            ArithLanguage::Num(_) => {
-                                egraph.add(lang_construct.clone());
-                                merge_egraphs(&egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
-                            }
-                            _ => {}
-                        }
+                        let is_terminal = |lc: &ArithLanguage| match lc {
+                            ArithLanguage::Num(_) | ArithLanguage::Var(_) => true,
+                            _ => false,
+                        };
+                        handle_language_construct!(lang_construct, egraph, new_expressions, prod, size, pts, is_terminal);
                     }
                 }
             }
@@ -150,39 +181,9 @@ impl<'a> Enumerator<'a> {
                                     for component in &prod.rhs {
                                         if let ProdComponent::LanguageConstruct(lang_construct) = component {
                                             match lang_construct {
-                                                ArithLanguage::Add(_) => {
-                                                    for &left_id in left_mapping.keys() {
-                                                        for &right_id in right_mapping.keys() {
-                                                            let new_left_id = left_mapping[&left_id];
-                                                            let new_right_id = right_mapping[&right_id];
-                                                            let expr = ArithLanguage::Add([new_left_id, new_right_id]);
-                                                            new_egraph.add(expr);
-                                                            merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
-                                                        }
-                                                    }
-                                                }
-                                                ArithLanguage::Sub(_) => {
-                                                    for &left_id in left_mapping.keys() {
-                                                        for &right_id in right_mapping.keys() {
-                                                            let new_left_id = left_mapping[&left_id];
-                                                            let new_right_id = right_mapping[&right_id];
-                                                            let expr = ArithLanguage::Sub([new_left_id, new_right_id]);
-                                                            new_egraph.add(expr);
-                                                            merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
-                                                        }
-                                                    }
-                                                }
-                                                ArithLanguage::Mul(_) => {
-                                                    for &left_id in left_mapping.keys() {
-                                                        for &right_id in right_mapping.keys() {
-                                                            let new_left_id = left_mapping[&left_id];
-                                                            let new_right_id = right_mapping[&right_id];
-                                                            let expr = ArithLanguage::Mul([new_left_id, new_right_id]);
-                                                            new_egraph.add(expr);
-                                                            merge_egraphs(&new_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
-                                                        }
-                                                    }
-                                                }
+                                                ArithLanguage::Add(_) => handle_binary_op!(ArithLanguage::Add, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
+                                                ArithLanguage::Sub(_) => handle_binary_op!(ArithLanguage::Sub, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
+                                                ArithLanguage::Mul(_) => handle_binary_op!(ArithLanguage::Mul, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
                                                 _ => {}
                                             }
                                         }
@@ -202,7 +203,7 @@ impl<'a> Enumerator<'a> {
         self.current_size = size;
     }
 
-    fn enumerate(&mut self, size: usize, pts: &[HashMap<String, i32>]) -> Vec<RecExpr<ArithLanguage>> {
+    fn enumerate(&mut self, size: usize, pts: &[(HashMap<String, i32>, i32)]) -> Vec<RecExpr<ArithLanguage>> {
         while self.current_size < size {
             self.grow(pts);
         }
@@ -221,7 +222,7 @@ impl<'a> Enumerator<'a> {
         result
     }
 
-    fn satisfies_counter_examples(&self, expr: &RecExpr<ArithLanguage>, pts: &[HashMap<String, i32>]) -> bool {
+    fn satisfies_counter_examples(&self, expr: &RecExpr<ArithLanguage>, pts: &[(HashMap<String, i32>, i32)]) -> bool {
         for pt in pts {
             if !self.satisfies_counter_example(expr, pt) {
                 return false;
@@ -230,12 +231,12 @@ impl<'a> Enumerator<'a> {
         true
     }
 
-    fn satisfies_counter_example(&self, expr: &RecExpr<ArithLanguage>, pt: &HashMap<String, i32>) -> bool {
+    fn satisfies_counter_example(&self, expr: &RecExpr<ArithLanguage>, pt: &(HashMap<String, i32>, i32)) -> bool {
         let mut egraph = EGraph::new(ObsEquiv { pts: vec![pt.clone()] });
         let id = egraph.add_expr(expr);
         egraph.rebuild();
         let value = egraph[id].data;
-        pt.values().all(|&v| v == value)
+        value == pt.1
     }
 }
 
@@ -248,7 +249,7 @@ impl EggSolver {
         EggSolver { grammar }
     }
 
-    fn synthesize(&self, max_size: usize, pts: &[HashMap<String, i32>]) -> Option<RecExpr<ArithLanguage>> {
+    fn synthesize(&self, max_size: usize, pts: &[(HashMap<String, i32>, i32)]) -> Option<RecExpr<ArithLanguage>> {
         let mut enumerator = Enumerator::new(&self.grammar);
         for size in 1..=max_size {
             let exprs = enumerator.enumerate(size, pts);
@@ -292,6 +293,14 @@ fn main() {
             },
             Production {
                 lhs: "S".to_string(),
+                lhs_type: "Var".to_string(),
+                rhs: vec![
+                    ProdComponent::LanguageConstruct(ArithLanguage::Var("x".to_string())),
+                    ProdComponent::LanguageConstruct(ArithLanguage::Var("y".to_string())),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
                 lhs_type: "Num".to_string(),
                 rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(0))]
             },
@@ -309,11 +318,11 @@ fn main() {
     };
 
     let solver = EggSolver::new(grammar);
-    let max_size = 3;
+    let max_size = 4;
 
     let pts = vec![
-        HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]),
-        HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]),
+        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 3),
+        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 7),
     ];
 
     if let Some(expr) = solver.synthesize(max_size, &pts) {
