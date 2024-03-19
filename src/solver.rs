@@ -1,5 +1,6 @@
 pub mod baseline_solver;
 pub mod egg_solver;
+pub mod egg_enum;
 
 use std::cell::RefCell;
 
