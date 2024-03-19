@@ -161,8 +161,8 @@ impl Value {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct EvalEnv {
-    vars: Vec<(String, Value)>,
-    funcs: Vec<(FuncName, FuncBody)>
+    pub vars: Vec<(String, Value)>,
+    pub funcs: Vec<(FuncName, FuncBody)>
 }
 
 impl EvalEnv {

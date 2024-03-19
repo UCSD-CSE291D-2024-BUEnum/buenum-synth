@@ -3,34 +3,37 @@ pub mod egg_solver;
 
 use crate::parser::ast;
 use crate::parser::ast::ProdName;
-use crate::parser::eval::EvalEnv;
 
 use std::collections::HashMap;
-
+use std::fmt::Debug;
 
 pub trait Solver {
     type Prog: ProgTrait;
     type Expr;
     type Grammar: GrammarTrait;
     type Constraint;
-    type CounterExample: Clone;
+    type CounterExample: Clone + Debug;
     const MAX_SIZE: usize = 10;
 
     fn enumerate<'a>(
         &'a self,
         g: &'a Self::Grammar,
-        c: &'a [Self::CounterExample]
+        c: &'a Vec<Self::CounterExample>,
     ) -> Box<dyn Iterator<Item = Self::Expr> + 'a>;
 
     fn extract_grammar<'a>(&'a self, p: &'a Self::Prog, func_name: &str) -> &Self::Grammar;
 
     fn extract_constraint(&self, p: &Self::Prog) -> Self::Constraint;
 
-    fn oe(&self, env: &EvalEnv, e1: &Self::Expr, e2: &Self::Expr) -> bool;
-
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Option<Self::CounterExample>;
 
-    fn expr_to_smt<'ctx>(&self, expr: &Self::Expr, vars: &'ctx HashMap<String, z3::ast::Dynamic>, funcs: &'ctx HashMap<String, z3::RecFuncDecl>, ctx: &'ctx z3::Context) -> Box<z3::ast::Dynamic<'ctx>>;
+    fn expr_to_smt<'ctx>(
+        &self,
+        expr: &Self::Expr,
+        vars: &'ctx HashMap<String, z3::ast::Dynamic>,
+        funcs: &'ctx HashMap<String, z3::RecFuncDecl>,
+        ctx: &'ctx z3::Context,
+    ) -> Box<z3::ast::Dynamic<'ctx>>;
 
     fn sort_to_z3_sort<'ctx>(&self, sort: &self::ast::Sort, ctx: &'ctx z3::Context) -> z3::Sort<'ctx>;
 
@@ -41,11 +44,16 @@ pub trait Solver {
 
         loop {
             let pts = counterexamples.clone();
-            let mut candidates = self.enumerate(&g, pts.as_slice());
-            while let Some(expr) = candidates.next() {
-                match self.verify(p, func_name, &expr) {
+            println!("pts: {:?}", pts);
+            let mut candidates = self.enumerate(&g, &pts);
+            match candidates.next() {
+                Some(expr) => match self.verify(p, func_name, &expr) {
                     None => return Some(expr),
-                    Some(cex) => counterexamples.push(cex)
+                    Some(cex) => counterexamples.push(cex),
+                },
+                None => {
+                    println!("Run out of candidates (resource limited)");
+                    return None;
                 }
             }
         }

@@ -7,6 +7,7 @@ use crate::parser::ast::*;
 use crate::solver::GrammarTrait;
 use crate::solver::Solver;
 use crate::parser::eval::EvalEnv;
+use crate::parser::eval::Value;
 
 use super::ProgTrait;
 
@@ -19,16 +20,18 @@ pub struct BaselineConstraint {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct BaselineCounterExample {
-    assignment: HashMap<Symbol, Expr>,
+    assignment: HashMap<Symbol, Value>,
+    output: Value,
 }
 
 pub struct BaselineEnumerator<'a, S: Solver> {
     solver: &'a S,
     grammar: &'a S::Grammar,
-    counterexamples: &'a [S::CounterExample],
+    counterexamples: &'a Vec<BaselineCounterExample>,
     cache: HashMap<(ProdName, usize), Vec<GExpr>>,
     current_size: usize,
     index: usize,
+    oe_cache: HashMap<String, Vec<BaselineCounterExample>>, // To be hashable, String is the format!() of candicate expression
 }
 
 /// DFS to search all the possible depth combination of sub non-terminals
@@ -60,8 +63,39 @@ fn argument(term_vec: &Vec<Vec<GExpr>>, visited: &Vec<Vec<bool>>, i: usize, curr
     }
 }
 
+fn match_all_io(a: &Vec<BaselineCounterExample>, b: &Vec<BaselineCounterExample>) -> bool {
+    assert!(a.len() == b.len());
+    let mut count = 0;
+    for i in 0..a.len() {
+        for j in 0..b.len() {
+            if a[i].assignment == b[j].assignment {
+                if a[i].output != b[j].output {
+                    return false;
+                } else {
+                    count += 1;
+                }
+            }
+        }
+    }
+    count == a.len()
+}
+
+fn match_any_io(a: &Vec<BaselineCounterExample>, b: &Vec<BaselineCounterExample>) -> bool {
+    assert!(a.len() == b.len());
+    for i in 0..a.len() {
+        for j in 0..b.len() {
+            if a[i].assignment == b[j].assignment {
+                if a[i].output == b[j].output {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 impl<'a, S: Solver> BaselineEnumerator<'a, S> {
-    pub fn new(solver: &'a S, grammar: &'a S::Grammar, counterexamples: &'a [S::CounterExample]) -> Self {
+    pub fn new(solver: &'a S, grammar: &'a S::Grammar, counterexamples: &'a Vec<BaselineCounterExample>) -> Self {
         BaselineEnumerator {
             solver,
             grammar,
@@ -69,6 +103,7 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             cache: HashMap::new(),
             current_size: 0,
             index: 0,
+            oe_cache: HashMap::new(),
         }
     }
 
@@ -77,7 +112,34 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
         if let Some(productions) = self.grammar.non_terminals().iter().find(|p| p.lhs == *non_terminal) {
             let mut generated_terms: Vec<GExpr> = Vec::new();
             self.terms(productions, size, &mut generated_terms);
-            self.cache.entry((non_terminal.clone(), size)).or_insert(generated_terms);
+            // Prune with Observational Equivalence
+            // Compute output for each generated term on all pts
+            // Skip those which match the output of one candidate in oe_cache on all pts
+            let mut rem_terms: Vec<GExpr> = Vec::new();
+            for gexpr in generated_terms {
+                // compute this input-output
+                let mut input_output: Vec<BaselineCounterExample> = Vec::new();
+                for cex in self.counterexamples {
+                    let vars: Vec<(String, Value)> = cex.assignment.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                    let env = EvalEnv{vars: vars, funcs: Vec::new()}; // TODO: unsure whether funcs should be empty
+                    let val = gexpr.to_expr().eval(&env);
+                    input_output.push(BaselineCounterExample{assignment: cex.assignment.clone(), output: val});
+                }
+                // iterate over all candicates to find if there is an oe match
+                let mut match_flag = false;
+                for (_, cex_vec) in self.oe_cache.iter() {
+                    if match_all_io(&input_output, &cex_vec) {
+                        match_flag = true;
+                        break;
+                    }
+                }
+                if match_flag {
+                    continue;
+                }
+                self.oe_cache.insert(format!("{:?}", gexpr.clone()), input_output); 
+                rem_terms.push(gexpr);
+            }
+            self.cache.entry((non_terminal.clone(), size)).or_insert(rem_terms);            
         }
     }
 
@@ -265,7 +327,7 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            //println!("{:?}", self.cache);
+            println!("Cache: {:?}", self.cache);
             for non_terminal in self.grammar.non_terminals().iter().map(|p| &p.lhs) {
                 if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
                     let program = &expressions[self.index];
@@ -273,6 +335,11 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
                     if self.index == expressions.len() {
                         self.current_size += 1;
                     }
+                    // if the program matches any counterexamples, skip it
+                    if match_any_io(self.oe_cache.get(&format!("{:?}",program)).unwrap(), self.counterexamples) {
+                        continue;
+                    }
+                    println!("{:?}", program.to_expr());
                     return Option::from(program.to_expr());
                 } else {
                     self.grow(non_terminal);
@@ -280,6 +347,12 @@ impl<'a, S: Solver> Iterator for BaselineEnumerator<'a, S> {
                         self.index = 0;
                         let program = &expressions[self.index];
                         self.index += 1;
+                        // if the program matches any counterexamples, skip it
+                        if match_any_io(self.oe_cache.get(&format!("{:?}",program)).unwrap(), self.counterexamples) {
+                            continue;
+                        }
+                        println!("------------Growing------------");
+                        println!("{:?}", program.to_expr());
                         return Option::from(program.to_expr());
                     }
                 }
@@ -298,7 +371,7 @@ impl Solver for BaselineSolver {
     fn enumerate<'a>(
         &'a self,
         g: &'a Self::Grammar,
-        c: &'a [Self::CounterExample],
+        c: &'a Vec<BaselineCounterExample>,
     ) -> Box<dyn Iterator<Item=Self::Expr> + 'a> {
         let enumerator = BaselineEnumerator::new(self, g, c);
         Box::new(enumerator)
@@ -316,10 +389,6 @@ impl Solver for BaselineSolver {
         BaselineConstraint {
             constraints: p.constraints.clone(),
         }
-    }
-
-    fn oe(&self, env: &EvalEnv, e1: &Self::Expr, e2: &Self::Expr) -> bool {
-        e1.eval(env) == e2.eval(env)
     }
 
     fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Option<Self::CounterExample> {
@@ -446,23 +515,26 @@ impl Solver for BaselineSolver {
             z3::SatResult::Unknown => panic!("Unknown z3 solver result"),
             z3::SatResult::Sat => { // return value assignment where at least one of the constraints is violated
                 let model = solver.get_model().unwrap();
-                let mut assignment: HashMap<String, Expr> = HashMap::new();
+                let mut assignment: HashMap<String, Value> = HashMap::new();
                 for (name, sort) in declare_vars {
                     let interp = model.get_const_interp(&vars[&name.clone()]).unwrap();
                     assignment.insert(
                         name.clone(),
                         match sort {
-                            Sort::Bool => Expr::ConstBool(interp.as_bool().unwrap().as_bool().unwrap()),
-                            Sort::Int => Expr::ConstInt(interp.as_int().unwrap().as_i64().unwrap()),
-                            Sort::BitVec(_) => Expr::ConstBitVec(interp.as_bv().unwrap().as_u64().unwrap()),
+                            Sort::Bool => Value::Bool(interp.as_bool().unwrap().as_bool().unwrap()),
+                            Sort::Int => Value::Int(interp.as_int().unwrap().as_i64().unwrap()),
+                            Sort::BitVec(_) => Value::BitVec(interp.as_bv().unwrap().as_u64().unwrap()),
                             Sort::Compound(_, _) => unimplemented!("Not supporting compound solving"),
-                            Sort::String => Expr::ConstString(interp.as_string().unwrap().as_string().unwrap()),
+                            Sort::String => Value::String(interp.as_string().unwrap().as_string().unwrap()),
                             Sort::None => panic!("Unsupported sort"),
                         },
                     );
                 }
 
-                return Some(Self::CounterExample { assignment });
+                let vars: Vec<(String, Value)> = assignment.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                let funcs: Vec<(String, FuncBody)> = define_funs.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                let env = EvalEnv{vars: vars, funcs: funcs};
+                return Some(Self::CounterExample {assignment: assignment, output: expr.eval(&env)});
             }
         }
     }
