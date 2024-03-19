@@ -1,5 +1,8 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
+use std::{
+    cell::RefCell,
+    vec
+};
 
 use egg::{
     rewrite as rw,
@@ -37,17 +40,16 @@ struct Grammar {
 
 struct Enumerator<'a> {
     grammar: &'a Grammar,
+    runner: Runner<ArithLanguage, ()>,
     cache: HashMap<(ProdName, usize), EGraph<ArithLanguage, ()>>,
     current_size: usize
 }
 
 impl<'a> Enumerator<'a> {
-    fn get_expr(&self, key: &(ProdName, usize), id: Id) -> RecExpr<ArithLanguage> {
-        self.cache.get(&key).unwrap().id_to_expr(id)
-    }
     fn new(grammar: &'a Grammar) -> Self {
         Enumerator {
             grammar,
+            runner: Runner::default(),
             cache: HashMap::new(),
             current_size: 0
         }
@@ -64,8 +66,9 @@ impl<'a> Enumerator<'a> {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
                         match lang_construct {
                             ArithLanguage::Num(n) => {
-                                let mut egraph = EGraph::new(());
+                                let mut egraph = EGraph::new(()).with_explanations_enabled();
                                 egraph.add(lang_construct.clone());
+                                // egraph.rebuild();
                                 new_expressions.insert((prod.lhs.clone(), size), egraph);
                             }
                             _ => {}
@@ -84,7 +87,7 @@ impl<'a> Enumerator<'a> {
                                 for right_ec in right_egraph.classes() {
                                     let left_id = left_ec.id;
                                     let right_id = right_ec.id;
-                                    let mut egraph = EGraph::new(());
+                                    let mut egraph = EGraph::new(()).with_explanations_enabled();
                                     // Add the operation based on production rule
                                     for component in &prod.rhs {
                                         if let ProdComponent::LanguageConstruct(lang_construct) = component {
@@ -104,8 +107,12 @@ impl<'a> Enumerator<'a> {
                                     }
                                     new_expressions
                                         .entry((prod.lhs.clone(), size))
-                                        .or_insert_with(|| EGraph::new(()))
+                                        .or_insert_with(|| EGraph::new(()).with_explanations_enabled())
                                         .egraph_union(&egraph);
+                                    // new_expressions
+                                    //     .entry((prod.lhs.clone(), size))
+                                    //     .or_insert_with(|| EGraph::new(()).with_explanations_enabled())
+                                    //     .rebuild();
                                 }
                             }
                         }
