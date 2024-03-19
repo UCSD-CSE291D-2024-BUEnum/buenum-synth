@@ -137,8 +137,8 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                     }
                 }
             },
-            GExpr::FuncApply(funcName, subs)
-            | GExpr::GFuncApply(funcName, subs)=> {
+            GExpr::FuncApply(func_name, subs)
+            | GExpr::GFuncApply(func_name, subs)=> {
                 let len = subs.len();
                 let mut depth = Vec::new();
                 depth_of_subs(d, len, &mut depth, &mut Vec::new());
@@ -174,8 +174,8 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
 
                 for res in final_res {
                     match expr {
-                        GExpr::FuncApply(_, _) => ret.push(GExpr::FuncApply(funcName.clone(), res.clone())),
-                        GExpr::GFuncApply(_, _) => ret.push(GExpr::GFuncApply(funcName.clone(), res.clone())),
+                        GExpr::FuncApply(_, _) => ret.push(GExpr::FuncApply(func_name.clone(), res.clone())),
+                        GExpr::GFuncApply(_, _) => ret.push(GExpr::GFuncApply(func_name.clone(), res.clone())),
                         _ => unreachable!()
                     }
                 }
@@ -246,7 +246,6 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
             | GExpr::ConstInt(_)
             | GExpr::ConstBitVec(_)
             | GExpr::ConstString(_)
-            | GExpr::Var(_, _)
             | GExpr::BvConst(_, _) => {},
             GExpr::Let(_, _) => eprintln!("Please implement Let"),
             _ => eprintln!("Unsupported: {:?}", expr)
@@ -581,6 +580,7 @@ impl Solver for BaselineSolver {
 
 
 mod tests {
+    #![allow(warnings)]
     use std::fs;
 
     use crate::{parser::parse, solver::Solver};
