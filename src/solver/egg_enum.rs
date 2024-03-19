@@ -14,6 +14,7 @@ define_language! {
         "+" = Add([Id; 2]),
         "-" = Sub([Id; 2]),
         "*" = Mul([Id; 2]),
+        "neg" = Neg([Id; 1]),
     }
 }
 
@@ -67,6 +68,7 @@ impl Analysis<ArithLanguage> for ObsEquiv {
                 }
                 sum
             }
+            ArithLanguage::Neg([a]) => -x(a),
             ArithLanguage::Add([a, b]) => x(a) + x(b),
             ArithLanguage::Sub([a, b]) => x(a) - x(b),
             ArithLanguage::Mul([a, b]) => x(a) * x(b),
@@ -181,6 +183,15 @@ impl<'a> Enumerator<'a> {
                                     for component in &prod.rhs {
                                         if let ProdComponent::LanguageConstruct(lang_construct) = component {
                                             match lang_construct {
+                                                ArithLanguage::Neg(_) => {
+                                                    let mut unary_egraph = new_egraph.clone().with_explanations_enabled();
+                                                    for eclass in new_egraph.classes() {
+                                                        let new_id = unary_egraph.add_expr(&new_egraph.id_to_expr(eclass.id));
+                                                        let expr = ArithLanguage::Neg([new_id]);
+                                                        unary_egraph.add(expr);
+                                                    }
+                                                    merge_egraphs(&unary_egraph, &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled()));
+                                                }
                                                 ArithLanguage::Add(_) => handle_binary_op!(ArithLanguage::Add, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
                                                 ArithLanguage::Sub(_) => handle_binary_op!(ArithLanguage::Sub, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
                                                 ArithLanguage::Mul(_) => handle_binary_op!(ArithLanguage::Mul, left_mapping, right_mapping, new_egraph, new_expressions, prod, size, pts),
@@ -291,6 +302,15 @@ fn main() {
                     ProdComponent::LhsName("S".to_string()),
                 ]
             },
+            // add unary op
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LanguageConstruct(ArithLanguage::Neg(Default::default())),
+                    ProdComponent::LhsName("S".to_string()),
+                ]
+            },
             Production {
                 lhs: "S".to_string(),
                 lhs_type: "Var".to_string(),
@@ -320,9 +340,10 @@ fn main() {
     let solver = EggSolver::new(grammar);
     let max_size = 4;
 
-    let pts = vec![
-        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 3),
-        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 7),
+    let pts = vec![ // x * 2 + y
+        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4),
+        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10),
+        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9),
     ];
 
     if let Some(expr) = solver.synthesize(max_size, &pts) {
@@ -339,5 +360,129 @@ mod tests {
     #[test]
     fn test_main() {
         main();
+        /*
+running 1 test
+EGraph size: 5
+Class 0: 8 [x]
+Class 5: 1 [1]
+Class 2: 7 [y]
+Class 4: 0 [0]
+Class 6: 2 [2]
+EGraph size: 23
+Class 0: 1 [1]
+Class 32: 0 [(- 1 1)]
+Class 64: 4 [(* 2 2)]
+Class 23: 3 [(+ 2 1)]
+Class 70: -2 [(neg 2)]
+Class 49: -5 [(- 2 y)]
+Class 11: 8 [x]
+Class 72: -1 [(neg 1)]
+Class 37: 5 [(- y 2)]
+Class 69: -8 [(neg x)]
+Class 63: 14 [(* 2 y)]
+Class 51: -6 [(- 2 x)]
+Class 48: 6 [(- x 2)]
+Class 71: -7 [(neg y)]
+Class 68: 16 [(* x 2)]
+Class 1: 7 [y]
+Class 27: 10 [(+ 2 x)]
+Class 24: 9 [(+ 2 y)]
+Class 59: 49 [(* y y)]
+Class 65: 64 [(* x x)]
+Class 15: 15 [(+ x y)]
+Class 6: 2 [2]
+Class 67: 56 [(* x y)]
+test solver::egg_enum::tests::test_main has been running for over 60 seconds
+EGraph size: 88
+Class 0: 8 [x]
+Class 469: 21 [(* (+ 2 1) y)]
+Class 457: -42 [(* (- 2 x) y)]
+Class 506: -9 [(neg (+ 2 y))]
+Class 183: 71 [(+ (* x x) y)]
+Class 49: 4 [(+ 2 2)]
+Class 177: 17 [(+ (* x 2) 1)]
+Class 500: -49 [(neg (* y y))]
+Class 482: 12 [(* (- x 2) 2)]
+Class 348: 57 [(- (* x x) y)]
+Class 476: 32 [(* (* 2 2) x)]
+Class 470: 112 [(* (* 2 y) x)]
+Class 458: 392 [(* (* y y) x)]
+Class 7: -8 [(neg x)]
+Class 196: -57 [(- y (* x x))]
+Class 62: -5 [(+ 2 (neg y))]
+Class 446: 40 [(* (- y 2) x)]
+Class 184: 58 [(+ (* x y) 2)]
+Class 245: -62 [(- 2 (* x x))]
+Class 501: -3 [(neg (+ 2 1))]
+Class 233: -63 [(- 1 (* x x))]
+Class 452: -40 [(* (- 2 y) x)]
+Class 483: 42 [(* (- x 2) y)]
+Class 32: 56 [(* x y)]
+Class 160: 51 [(+ (* y y) 2)]
+Class 26: 3 [(+ 2 1)]
+Class 20: 15 [(+ x y)]
+Class 337: 54 [(- (* x y) 2)]
+Class 477: 28 [(* (* 2 2) y)]
+Class 2: 2 [2]
+Class 130: 0 [(+ x (neg x))]
+Class 502: -14 [(neg (* 2 y))]
+Class 179: 23 [(+ (* x 2) y)]
+Class 496: -56 [(neg (* x y))]
+Class 484: 512 [(* (* x x) x)]
+Class 161: 50 [(+ (* y y) 1)]
+Class 472: 98 [(* (* 2 y) y)]
+Class 15: 1 [1]
+Class 460: 343 [(* (* y y) y)]
+Class 9: 7 [y]
+Class 326: 47 [(- (* y y) 2)]
+Class 3: 10 [(+ 2 x)]
+Class 454: -35 [(* (- 2 y) y)]
+Class 448: 35 [(* (- y 2) y)]
+Class 314: -13 [(- (- 2 y) x)]
+Class 52: 16 [(+ 2 (* 2 y))]
+Class 180: 66 [(+ (* x x) 2)]
+Class 46: 5 [(+ 2 (+ 2 1))]
+Class 491: 72 [(* (+ 2 y) x)]
+Class 40: -2 [(neg 2)]
+Class 241: -55 [(- 1 (* x y))]
+Class 497: -4 [(neg (* 2 2))]
+Class 485: 128 [(* (* x x) 2)]
+Class 503: -10 [(neg (+ 2 x))]
+Class 22: 14 [(* 2 y)]
+Class 16: 9 [(+ 2 y)]
+Class 461: 120 [(* (+ x y) x)]
+Class 455: -48 [(* (- 2 x) x)]
+Class 467: 24 [(* (+ 2 1) x)]
+Class 449: 80 [(* (+ 2 x) x)]
+Class 254: -54 [(- 2 (* x y))]
+Class 504: -16 [(neg (* x 2))]
+Class 181: 65 [(+ (* x x) 1)]
+Class 492: 18 [(* (+ 2 y) 2)]
+Class 486: 448 [(* (* x x) y)]
+Class 352: 13 [(- (+ x y) 2)]
+Class 346: 62 [(- (* x x) 2)]
+Class 145: 22 [(+ (+ x y) y)]
+Class 462: 30 [(* (+ x y) 2)]
+Class 456: -12 [(* (- 2 x) 2)]
+Class 5: 6 [(- x 2)]
+Class 322: 41 [(- (* y y) x)]
+Class 249: -47 [(- 2 (* y y))]
+Class 450: 20 [(* (+ 2 x) 2)]
+Class 499: -64 [(neg (* x x))]
+Class 505: -15 [(neg (+ x y))]
+Class 493: 63 [(* (+ 2 y) y)]
+Class 42: 64 [(* x x)]
+Class 170: 11 [(+ (* 2 2) y)]
+Class 36: -6 [(- 2 x)]
+Class 481: 48 [(* (- x 2) x)]
+Class 30: 49 [(* y y)]
+Class 24: -1 [(neg 1)]
+Class 213: -41 [(- x (* y y))]
+Class 18: -7 [(neg y)]
+Class 335: 55 [(- (* x y) 1)]
+Class 463: 105 [(* (+ x y) y)]
+Class 451: 70 [(* (+ 2 x) y)]
+Synthesized expression: (+ (* x 2) y)
+*/
     }
 }
