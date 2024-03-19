@@ -428,49 +428,12 @@ impl Solver for BaselineSolver {
         // if any neg(constraint) is sat, a counter-example is found
         let mut clauses: Vec<z3::ast::Bool> = Vec::new();
         for c in constraints {
-            match c {
-                // assume there is at least one constraint and it's equation
-                Expr::Equal(e1, e2) => match declare_vars[declare_vars.keys().next().unwrap()] {
-                    Sort::Bool => {
-                        clauses.push(
-                            self.expr_to_smt(&e1, &vars, &funcs, &ctx)
-                                .as_bool()
-                                .unwrap()
-                                ._eq(&self.expr_to_smt(&e2, &vars, &funcs, &ctx).as_bool().unwrap())
-                                .not(),
-                        );
-                    }
-                    Sort::Int => {
-                        clauses.push(
-                            self.expr_to_smt(&e1, &vars, &funcs, &ctx)
-                                .as_int()
-                                .unwrap()
-                                ._eq(&self.expr_to_smt(&e2, &vars, &funcs, &ctx).as_int().unwrap())
-                                .not(),
-                        );
-                    }
-                    Sort::BitVec(_) => {
-                        clauses.push(
-                            self.expr_to_smt(&e1, &vars, &funcs, &ctx)
-                                .as_bv()
-                                .unwrap()
-                                ._eq(&self.expr_to_smt(&e2, &vars, &funcs, &ctx).as_bv().unwrap())
-                                .not(),
-                        );
-                    }
-                    Sort::String => {
-                        clauses.push(
-                            self.expr_to_smt(&e1, &vars, &funcs, &ctx)
-                                .as_string()
-                                .unwrap()
-                                ._eq(&self.expr_to_smt(&e2, &vars, &funcs, &ctx).as_string().unwrap())
-                                .not(),
-                        );
-                    }
-                    _ => panic!("Unsupported sort"),
-                },
-                _ => panic!("Unsupported constraint format"),
-            }
+            clauses.push(
+                self.expr_to_smt(&c, &vars, &funcs, &ctx)
+                    .as_bool()
+                    .unwrap()
+                    .not(),
+            );
         }
         let clauses_references: Vec<&z3::ast::Bool<'_>> = clauses.iter().collect();
         solver.assert(&z3::ast::Bool::or(&ctx, clauses_references.as_slice()));
@@ -579,7 +542,10 @@ impl Solver for BaselineSolver {
                     .unwrap()
                     .iff(&self.expr_to_smt(e2, vars, funcs, ctx).as_bool().unwrap()),
             )),
-            Expr::Equal(e1, e2) => unreachable!(), // handled before reaching here
+            Expr::Equal(e1, e2) => Box::from(z3::ast::Dynamic::from(
+                self.expr_to_smt(e1, vars, funcs, ctx)
+                    ._eq(&self.expr_to_smt(e2, vars, funcs, ctx)),
+            )),
             Expr::BvAnd(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvand),
             Expr::BvOr(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvor),
             Expr::BvXor(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvxor),
@@ -666,7 +632,6 @@ mod tests {
                 panic!("Error parsing file: {}\nError: {:#?}", filename, e);
             }
         };
-        println!("{:#?}", prog);
         let solver = super::BaselineSolver;
         let func_name = "AIG";
 
@@ -755,7 +720,6 @@ mod tests {
                 panic!("Error parsing file: {}\nError: {:#?}", filename, e);
             }
         };
-        println!("{:#?}", prog);
         let solver = super::BaselineSolver;
         let func_name = "AIG";
 
