@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::process::exit;
 use std::vec;
 
 use egg::{
@@ -6,13 +7,17 @@ use egg::{
     *
 };
 use strum_macros::Display;
-use z3::ast::{Ast, Dynamic};
+use z3::ast::{
+    Ast,
+    Dynamic
+};
 use z3::{
     ast::Bool,
     Config,
     Context,
     Solver
 };
+
 fn verify(
     expr: &RecExpr<BoolLanguage>,
     var_map: &HashMap<String, z3::ast::Bool>,
@@ -41,9 +46,9 @@ fn verify(
     for (var, _) in var_map {
         custom_fn_args.push(var_map[var].clone());
     }
-    let custom_fn_args_refs: Vec<&dyn z3::ast::Ast> = custom_fn_args.iter().map(|arg| arg as &dyn z3::ast::Ast).collect();
+    let custom_fn_args_refs: Vec<&dyn z3::ast::Ast> =
+        custom_fn_args.iter().map(|arg| arg as &dyn z3::ast::Ast).collect();
 
-    
     // Assert that the synthesized expression is not equal to the custom function
     solver.assert(&z3_expr._eq(&custom_fn_decl.apply(&custom_fn_args_refs)).not());
 
@@ -87,20 +92,20 @@ fn convert_to_z3_expr<'ctx>(
     }
 }
 
-define_language! {
-    pub enum ArithLanguage {
-        Num(i32),
-        Var(String),
-        "+" = Add([Id; 2]),
-        "-" = Sub([Id; 2]),
-        "*" = Mul([Id; 2]),
-        "|" = Or([Id; 2]),
-        "&" = And([Id; 2]),
-        "^" = Xor([Id; 2]),
-        "<<" = Shl([Id; 2]),
-        "neg" = Neg([Id; 1]),
-    }
-}
+// define_language! {
+//     pub enum ArithLanguage {
+//         Num(i32),
+//         Var(String),
+//         "+" = Add([Id; 2]),
+//         "-" = Sub([Id; 2]),
+//         "*" = Mul([Id; 2]),
+//         "|" = Or([Id; 2]),
+//         "&" = And([Id; 2]),
+//         "^" = Xor([Id; 2]),
+//         "<<" = Shl([Id; 2]),
+//         "neg" = Neg([Id; 1]),
+//     }
+// }
 
 define_language! {
     pub enum BoolLanguage {
@@ -112,11 +117,11 @@ define_language! {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
-pub enum SyGuSLanguage {
-    BoolLanguage(BoolLanguage),
-    ArithLanguage(ArithLanguage)
-}
+// #[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
+// pub enum SyGuSLanguage {
+//     BoolLanguage(BoolLanguage),
+//     ArithLanguage(ArithLanguage)
+// }
 
 type ProdName = String;
 
@@ -203,7 +208,7 @@ impl Analysis<BoolLanguage> for ObsEquiv {
 
 struct Enumerator<'a> {
     grammar: &'a Grammar,
-    runner: Runner<BoolLanguage, ObsEquiv>,
+    // runner: Runner<BoolLanguage, ObsEquiv>,
     cache: HashMap<(ProdName, usize), EGraph<BoolLanguage, ObsEquiv>>,
     current_size: usize
 }
@@ -222,8 +227,11 @@ fn pretty_egraph<L: Language, N: Analysis<L>>(egraph: &EGraph<L, N>)
 where
     L: std::fmt::Display
 {
-    println!("\nPretty printing egraph...");
-    println!("  EGraph size: {}", egraph.number_of_classes());
+    println!(
+        "  EGraph size: [{}, {}]",
+        egraph.number_of_classes(),
+        egraph.total_number_of_nodes()
+    );
     for class in egraph.classes() {
         println!(
             "    Class {}: {:?} [{}]",
@@ -231,6 +239,9 @@ where
             egraph[class.id].data,
             egraph.id_to_expr(class.id).pretty(80)
         );
+        for node in class.nodes.iter() {
+            println!("      Node: {:?}", node);
+        }
     }
     println!();
 }
@@ -272,7 +283,7 @@ impl<'a> Enumerator<'a> {
     fn new(grammar: &'a Grammar) -> Self {
         Enumerator {
             grammar,
-            runner: Runner::default(),
+            // runner: Runner::default(),
             cache: HashMap::new(),
             current_size: 0
         }
@@ -287,95 +298,161 @@ impl<'a> Enumerator<'a> {
                 let mut egraph = EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled();
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
-                        // let is_terminal = |lc: &ArithLanguage| match lc {
-                        //     ArithLanguage::Num(_) | ArithLanguage::Var(_) => true,
-                        //     _ => false,
-                        // };
-                        let is_terminal = |lc: &BoolLanguage| match lc {
-                            BoolLanguage::Const(_) | BoolLanguage::Var(_) => true,
-                            _ => false
-                        };
-                        handle_language_construct!(
-                            lang_construct,
-                            egraph,
-                            new_expressions,
-                            prod,
-                            size,
-                            pts,
-                            is_terminal
+                        match lang_construct {
+                            BoolLanguage::Const(val) => {
+                                // println!("Before update: {:?}", &egraph);
+                                egraph.add(lang_construct.clone());
+                                // println!("After update: {:?}", &egraph);
+                            }
+                            BoolLanguage::Var(val) => {
+                                // println!("Before update: {:?}", &egraph);
+                                egraph.add(lang_construct.clone());
+                                // println!("After update: {:?}", &egraph);
+                            }
+                            _ => {} // all other language constructs will be size > 1
+                        }
+                        merge_egraphs(
+                            &egraph,
+                            &mut new_expressions
+                                .entry((prod.lhs.clone(), size))
+                                .or_insert(EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled())
                         );
                     }
                 }
             }
+            println!("Size 1 expressions:");
             pretty_egraph(&new_expressions[&("Start".to_string(), 1)]);
         } else {
             for prod in &self.grammar.productions {
-                for left_size in 1..size {
-                    let right_size = size - left_size;
-                    if let Some(left_egraph) = self.cache.get(&(prod.lhs.clone(), left_size)) {
-                        if let Some(right_egraph) = self.cache.get(&(prod.lhs.clone(), right_size)) {
-                            for left_enode in left_egraph.classes() {
-                                for right_enode in right_egraph.classes() {
-                                    // println!("Merging left and right egraphs:");
-                                    let mut new_egraph = left_egraph.clone().with_explanations_enabled();
-                                    let left_mapping: HashMap<_, _> = left_egraph
-                                        .classes()
-                                        .map(|c| (c.id, new_egraph.add_expr(&left_egraph.id_to_expr(c.id))))
-                                        .collect();
-                                    let right_mapping: HashMap<_, _> = right_egraph
-                                        .classes()
-                                        .map(|c| (c.id, new_egraph.add_expr(&right_egraph.id_to_expr(c.id))))
-                                        .collect();
-                                    println!("Left egraph:");
-                                    pretty_egraph(&new_egraph);
-                                    println!("Right egraph:");
-                                    pretty_egraph(&right_egraph);
-                                    println!("Merging...");
-                                    merge_egraphs(right_egraph, &mut new_egraph);
-                                    println!("Merged egraph:");
-                                    pretty_egraph(&new_egraph);
-                                    for component in &prod.rhs {
-                                        if let ProdComponent::LanguageConstruct(lang_construct) = component {
-                                            match lang_construct {
-                                                BoolLanguage::And(_) => handle_binary_op!(
-                                                    BoolLanguage::And,
-                                                    left_mapping,
-                                                    right_mapping,
-                                                    new_egraph,
-                                                    new_expressions,
-                                                    prod,
-                                                    size,
-                                                    pts
-                                                ),
-                                                BoolLanguage::Or(_) => handle_binary_op!(
-                                                    BoolLanguage::Or,
-                                                    left_mapping,
-                                                    right_mapping,
-                                                    new_egraph,
-                                                    new_expressions,
-                                                    prod,
-                                                    size,
-                                                    pts
-                                                ),
-                                                BoolLanguage::Not(_) => {
-                                                    let mut unary_egraph =
-                                                        new_egraph.clone().with_explanations_enabled();
-                                                    for eclass in new_egraph.classes() {
-                                                        let new_id =
-                                                            unary_egraph.add_expr(&new_egraph.id_to_expr(eclass.id));
-                                                        let expr = BoolLanguage::Not([new_id]);
-                                                        unary_egraph.add(expr);
-                                                    }
-                                                    merge_egraphs(
-                                                        &unary_egraph,
-                                                        &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(
-                                                            EGraph::new(ObsEquiv { pts: pts.to_vec() })
-                                                                .with_explanations_enabled()
-                                                        )
-                                                    );
-                                                }
-                                                _ => {}
+                // if unary op
+                // ==1 for terminal,
+                // ==2 for unary op,
+                // ==3 for binary op
+                let prod_len = prod.rhs.len();
+                dbg!(prod_len);
+                if prod.rhs.len() == 2 {
+                    let right_size = size - 1;
+                    if let Some(right_egraph) = self.cache.get(&(prod.lhs.clone(), right_size)) {
+                        for right_enode in right_egraph.classes() {
+                            let mut new_egraph = right_egraph.clone().with_explanations_enabled();
+                            let right_mapping: HashMap<_, _> = right_egraph
+                                .classes()
+                                .map(|c| (c.id, new_egraph.add_expr(&right_egraph.id_to_expr(c.id))))
+                                .collect();
+                            for component in &prod.rhs {
+                                if let ProdComponent::LanguageConstruct(lang_construct) = component {
+                                    match lang_construct {
+                                        BoolLanguage::Not(_) => {
+                                            let mut unary_egraph = new_egraph.clone().with_explanations_enabled();
+                                            for eclass in new_egraph.classes() {
+                                                let new_id = unary_egraph.add_expr(&new_egraph.id_to_expr(eclass.id));
+                                                let expr = BoolLanguage::Not([new_id]);
+                                                unary_egraph.add(expr);
                                             }
+
+                                            merge_egraphs(
+                                                &unary_egraph,
+                                                &mut new_expressions.entry((prod.lhs.clone(), size)).or_insert(
+                                                    EGraph::new(ObsEquiv { pts: pts.to_vec() })
+                                                        .with_explanations_enabled()
+                                                )
+                                            );
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    for left_size in 1..size {
+                        let right_size = size - left_size;
+                        if let Some(left_egraph) = self.cache.get(&(prod.lhs.clone(), left_size)) {
+                            if let Some(right_egraph) = self.cache.get(&(prod.lhs.clone(), right_size)) {
+                                for left_enode in left_egraph.classes() {
+                                    for right_enode in right_egraph.classes() {
+                                        // println!("Merging left and right egraphs:");
+                                        let mut new_egraph = left_egraph.clone().with_explanations_enabled();
+                                        let left_mapping: HashMap<_, _> = left_egraph
+                                            .classes()
+                                            .map(|c| (c.id, new_egraph.add_expr(&left_egraph.id_to_expr(c.id))))
+                                            .collect();
+                                        let right_mapping: HashMap<_, _> = right_egraph
+                                            .classes()
+                                            .map(|c| (c.id, new_egraph.add_expr(&right_egraph.id_to_expr(c.id))))
+                                            .collect();
+                                        // println!("Left egraph:");
+                                        // pretty_egraph(&left_egraph);
+                                        // println!("Right egraph:");
+                                        // pretty_egraph(&right_egraph);
+                                        // println!("Merging...");
+
+                                        merge_egraphs(right_egraph, &mut new_egraph);
+
+                                        // println!("Merged egraph:");
+                                        // pretty_egraph(&new_egraph);
+
+                                        for component in &prod.rhs {
+                                            if let ProdComponent::LanguageConstruct(lang_construct) = component {
+                                                match lang_construct {
+                                                    BoolLanguage::And(_) => {
+                                                        for &left_id in left_mapping.keys() {
+                                                            for &right_id in right_mapping.keys() {
+                                                                let new_left_id = left_mapping[&left_id];
+                                                                let new_right_id = right_mapping[&right_id];
+                                                                dbg!(new_left_id, new_right_id);
+                                                                let expr =
+                                                                    BoolLanguage::And([new_left_id, new_right_id]);
+
+                                                                new_egraph.add(expr);
+
+                                                                let prev_egraph = new_expressions
+                                                                    .get(&(prod.lhs.clone(), size - 1))
+                                                                    .unwrap_or(
+                                                                        &EGraph::new(ObsEquiv { pts: pts.to_vec() })
+                                                                            .with_explanations_enabled()
+                                                                    )
+                                                                    .clone();
+
+                                                                merge_egraphs(
+                                                                    &new_egraph,
+                                                                    &mut new_expressions
+                                                                        .entry((prod.lhs.clone(), size))
+                                                                        .or_insert(prev_egraph)
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    BoolLanguage::Or(_) => {
+                                                        for &left_id in left_mapping.keys() {
+                                                            for &right_id in right_mapping.keys() {
+                                                                let new_left_id = left_mapping[&left_id];
+                                                                let new_right_id = right_mapping[&right_id];
+                                                                let expr =
+                                                                    BoolLanguage::Or([new_left_id, new_right_id]);
+
+                                                                new_egraph.add(expr);
+
+                                                                let prev_egraph = new_expressions
+                                                                    .get(&(prod.lhs.clone(), size - 1))
+                                                                    .unwrap_or(
+                                                                        &EGraph::new(ObsEquiv { pts: pts.to_vec() })
+                                                                            .with_explanations_enabled()
+                                                                    )
+                                                                    .clone();
+
+                                                                merge_egraphs(
+                                                                    &new_egraph,
+                                                                    &mut new_expressions
+                                                                        .entry((prod.lhs.clone(), size))
+                                                                        .or_insert(prev_egraph)
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    _ => {}
+                                                }
+                                            } // do one derivation, then collect from cache
                                         }
                                     }
                                 }
@@ -384,10 +461,17 @@ impl<'a> Enumerator<'a> {
                     }
                 }
             }
+            println!("Size {} expressions:", size);
             pretty_egraph(&new_expressions[&("Start".to_string(), size)]);
         }
         for (key, egraph) in new_expressions {
-            self.cache.entry(key).or_insert(egraph);
+            let mut cached_egraph = self.cache.entry(key).or_insert(egraph.clone());
+            merge_egraphs(&egraph, &mut cached_egraph);
+        }
+
+        for (key, egraph) in &self.cache {
+            println!("Cached egraph: {:?}", key);
+            pretty_egraph(egraph);
         }
 
         self.current_size = size;
@@ -414,6 +498,7 @@ impl<'a> Enumerator<'a> {
 
     fn satisfies_counter_examples(&self, expr: &RecExpr<BoolLanguage>, pts: &[(HashMap<String, bool>, bool)]) -> bool {
         for pt in pts {
+            println!("Checking counter-example: {:?}", pt);
             if !self.satisfies_counter_example(expr, pt) {
                 return false;
             }
@@ -452,6 +537,7 @@ impl EggSolver {
 
         for size in 1..=max_size {
             let exprs = enumerator.enumerate(size, pts);
+            // dbg!(&exprs);
             for expr in exprs {
                 // println!("Checking expression: {}", expr.pretty(100));
                 let var_map: HashMap<String, Bool> = var_names
@@ -588,13 +674,15 @@ impl EggSolver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::vec;
+
     use egg::{
         rewrite as rw,
         *
     };
-    
+
+    use super::*;
+
     #[test]
     fn test_bool_1() {
         let grammar = Grammar {
@@ -690,6 +778,20 @@ mod tests {
                         "c".to_string()
                     ))]
                 },
+                // Production {
+                //     lhs: "Start".to_string(),
+                //     lhs_type: "Bool".to_string(),
+                //     rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Const(
+                //         true
+                //     ))]
+                // },
+                // Production {
+                //     lhs: "Start".to_string(),
+                //     lhs_type: "Bool".to_string(),
+                //     rhs: vec![ProdComponent::LanguageConstruct(BoolLanguage::Const(
+                //         false
+                //     ))]
+                // },
             ]
         };
 
