@@ -91,6 +91,31 @@ struct Enumerator<'a> {
     cache: HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>,
     current_size: usize
 }
+fn pretty_cache(cache: &HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>, starting_space: usize)  -> String {
+    let mut result = String::new();
+    result.push_str("Cache:\n");
+    for (key, exprs) in cache {
+        for expr in exprs {
+            // println!("[{}, {}]: {}", &key.0, &key.1, expr.pretty(100));
+            // println!("{}[{}, {}]: {}", " ".repeat(starting_space), &key.0, &key.1, expr.pretty(100));
+            result.push_str(&format!("{}[{}, {}]: {}\n", " ".repeat(starting_space), &key.0, &key.1, expr.pretty(100)));
+        }
+    }
+    result.trim().to_string()
+}
+
+fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize) -> String {
+    let mut result = String::new();
+    result.push_str("EGraph:\n");
+    for eclass in egraph.classes() {
+        let expr = egraph.id_to_expr(eclass.id);
+        result.push_str(&format!("{}{}:[{}]\n", " ".repeat(starting_space), eclass.id, expr.pretty(100)));
+        for eqc in eclass.iter() {
+            result.push_str(&format!("{}<{}>: {}\n", " ".repeat(starting_space * 2), eqc, egraph[eclass.id].data));
+        }
+    }
+    result.trim().to_string()
+}
 
 fn merge_egraphs<L: Language, N: Analysis<L>>(source_egraph: &EGraph<L, N>, target_egraph: &mut EGraph<L, N>) {
     for id in source_egraph.classes().map(|e| e.id) {
@@ -126,13 +151,27 @@ impl<'a> Enumerator<'a> {
             self.cache.entry(key).or_insert_with(HashSet::new).retain(|expr| !exprs.contains(expr));
         }
         // TODO: now, we removed them, how to construct the new expressions?
+        // for eclass in self.egraph.classes() {
+        //     let expr = self.egraph.id_to_expr(eclass.id);
+        //     let size = expr.
+        //     let key = (expr.as_ref().clone(), size);
+        //     self.cache.entry(key).or_insert_with(HashSet::new).insert(expr);
+        // }
     }
     fn grow(&mut self, pts: &[(HashMap<String, i32>, i32)]) {
         let size = self.current_size + 1;
         let mut new_expressions = HashMap::new();
 
-        self.egraph.analysis.pts = pts.to_vec();
-        self.egraph.rebuild();
+        println!("------------- Growing to size {} -------------", size);
+        println!("Points: {:?}", &pts);
+        // println!("Previous points: {:?}", &self.egraph.analysis.pts);
+        // println!("EGraph before rebuild():\n{}", pretty_egraph(&self.egraph, 2));
+        // println!("Before rebuild() cache:\n{}", pretty_cache(&self.cache, 2));
+        // self.rebuild(pts);
+        // println!("Current points: {:?}", &self.egraph.analysis.pts);
+        // println!("EGraph after rebuild():\n{}", pretty_egraph(&self.egraph, 2));
+        // println!("After rebuild() cache:\n{}", pretty_cache(&self.cache, 2));
+        
 
         if size == 1 {
             for prod in &self.grammar.productions {
@@ -213,18 +252,23 @@ impl<'a> Enumerator<'a> {
     }
 
     fn enumerate(&mut self, size: usize, pts: &[(HashMap<String, i32>, i32)]) -> Vec<RecExpr<ArithLanguage>> {
-        self.egraph.analysis.pts = pts.to_vec();
-        while self.current_size < size {
-            self.grow(pts);
+        // if new points are given, we need to start from scratch
+        if self.egraph.analysis.pts.len() != pts.len() {
+            self.current_size = 0;
+            self.egraph = EGraph::new(ObsEquiv { pts: pts.to_vec() }).with_explanations_enabled();
+            self.cache = HashMap::new();
         }
-
         let mut result = Vec::new();
-        for eclass in self.egraph.classes() {
-            let expr = self.egraph.id_to_expr(eclass.id);
-            if self.satisfies_counter_examples(&expr, pts) {
-                result.push(expr);
+        while self.current_size < size && result.is_empty(){
+            self.grow(pts);
+            for eclass in self.egraph.classes() {
+                let expr = self.egraph.id_to_expr(eclass.id);
+                if self.satisfies_counter_examples(&expr, pts) {
+                    println!("{}: {}", self.current_size, expr.pretty(100));
+                    result.push(expr);
+                }
             }
-        }
+            }
         result
     }
 
@@ -264,8 +308,9 @@ impl EggSolver {
             for size in 1..=max_size {
                 let exprs = enumerator.enumerate(size, &pts);
                 for expr in exprs {
-                    println!("{}: {}", size, expr.pretty(100));
+                    // println!("{}: {}", size, expr.pretty(100));
                     if self.verify(&expr, pts_all) {
+                        println!("{}: {}", size, expr.pretty(100));
                         return Some(expr);
                     }
                 }
@@ -352,7 +397,7 @@ fn main() {
     };
 
     let solver = EggSolver::new(grammar);
-    let max_size = 5;
+    let max_size = 3;
 
     // let pts = vec![
     //     // x * x + y * 2
@@ -363,6 +408,7 @@ fn main() {
     // ];
     let pts = vec![
         // 2 * x + y
+        // (+ (* 2 x) y)
         (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
         (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
         (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
@@ -372,6 +418,7 @@ fn main() {
         println!("Synthesized expression: {}", expr.pretty(100));
     } else {
         println!("No expression could be synthesized.");
+        assert!(false);
     }
 }
 
@@ -380,7 +427,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_main() {
+    fn test_egg_enum() {
         main();
     }
 }
