@@ -303,32 +303,35 @@ impl EggSolver {
         let mut enumerator = Enumerator::new(&self.grammar);
 
         let mut pts = vec![];
-        for pt in pts_all {
-            pts.push(pt.clone());
-            for size in 1..=max_size {
-                let exprs = enumerator.enumerate(size, &pts);
-                for expr in exprs {
-                    // println!("{}: {}", size, expr.pretty(100));
-                    if self.verify(&expr, pts_all) {
-                        println!("{}: {}", size, expr.pretty(100));
-                        return Some(expr);
-                    }
+        // set a timeout
+        let start = std::time::Instant::now();
+        loop {
+            let exprs = enumerator.enumerate(max_size, &pts);
+            for expr in exprs {
+                if let Some(pt) = self.verify(&expr, pts_all) {
+                    pts.push(pt);
+                } else {
+                    println!("{}: {}", AstSize.cost_rec(&expr), expr.pretty(100));
+                    return Some(expr);
                 }
+            }
+            if start.elapsed().as_secs() > 120 { // 2 minutes
+                break;
             }
         }
         None
     }
-    fn verify(&self, expr: &RecExpr<ArithLanguage>, pts_all: &[(HashMap<String, i32>, i32)]) -> bool {
+    fn verify(&self, expr: &RecExpr<ArithLanguage>, pts_all: &[(HashMap<String, i32>, i32)]) -> Option<(HashMap<String, i32>, i32)> {
         for pt in pts_all {
             let mut egraph = EGraph::new(ObsEquiv { pts: vec![pt.clone()] });
             let id = egraph.add_expr(expr);
             egraph.rebuild();
             let value = egraph[id].data;
             if value != pt.1 {
-                return false;
+                return Some(pt.clone());
             }
         }
-        true
+        None
     }
 }
 
