@@ -46,6 +46,7 @@ impl Analysis<ArithLanguage> for ObsEquiv {
     type Data = IOPairs;
 
     fn merge(&mut self, to: &mut Self::Data, from: Self::Data) -> DidMerge {
+        println!("<ObsEquiv::merge> to: {:?}, from: {:?}", to, from);
         let mut merged = false;
         for (from_input, from_output) in from {
             if !to.contains(&(from_input.clone(), from_output)) {
@@ -57,6 +58,7 @@ impl Analysis<ArithLanguage> for ObsEquiv {
     }
 
     fn make(egraph: &EGraph<ArithLanguage, Self>, enode: &ArithLanguage) -> Self::Data {
+        println!("<ObsEquiv::make> enode: {:?}", enode);
         let x = |i: &Id| &egraph[*i].data;
         match enode {
             ArithLanguage::Num(n) => vec![(HashMap::new(), *n)],
@@ -68,57 +70,67 @@ impl Analysis<ArithLanguage> for ObsEquiv {
                     }
                 }
                 result
-            }
+            },
             ArithLanguage::Neg([a]) => x(a)
                 .iter()
                 .map(|(inputs, output)| (inputs.clone(), -output))
                 .collect(),
-                ArithLanguage::Add([a, b]) => {
-                    let mut result = vec![];
-                    for (a_inputs, a_output) in x(a) {
-                        for (b_inputs, b_output) in x(b) {
-                            let mut inputs = a_inputs.clone();
-                            inputs.extend(b_inputs.clone());
-                            result.push((inputs, a_output + b_output));
-                        }
+            ArithLanguage::Add([a, b]) => {
+                let mut result = vec![];
+                for (a_inputs, a_output) in x(a) {
+                    for (b_inputs, b_output) in x(b) {
+                        let mut inputs = a_inputs.clone();
+                        inputs.extend(b_inputs.clone());
+                        result.push((inputs, a_output + b_output));
                     }
-                    result
                 }
-                ArithLanguage::Sub([a, b]) => {
-                    let mut result = vec![];
-                    for (a_inputs, a_output) in x(a) {
-                        for (b_inputs, b_output) in x(b) {
-                            let mut inputs = a_inputs.clone();
-                            inputs.extend(b_inputs.clone());
-                            result.push((inputs, a_output - b_output));
-                        }
+                result
+            },
+            ArithLanguage::Sub([a, b]) => {
+                let mut result = vec![];
+                for (a_inputs, a_output) in x(a) {
+                    for (b_inputs, b_output) in x(b) {
+                        let mut inputs = a_inputs.clone();
+                        inputs.extend(b_inputs.clone());
+                        result.push((inputs, a_output - b_output));
                     }
-                    result
                 }
-                ArithLanguage::Mul([a, b]) => {
-                    let mut result = vec![];
-                    for (a_inputs, a_output) in x(a) {
-                        for (b_inputs, b_output) in x(b) {
-                            let mut inputs = a_inputs.clone();
-                            inputs.extend(b_inputs.clone());
-                            result.push((inputs, a_output * b_output));
-                        }
+                result
+            },
+            ArithLanguage::Mul([a, b]) => {
+                let mut result = vec![];
+                for (a_inputs, a_output) in x(a) {
+                    for (b_inputs, b_output) in x(b) {
+                        let mut inputs = a_inputs.clone();
+                        inputs.extend(b_inputs.clone());
+                        result.push((inputs, a_output * b_output));
                     }
-                    result
                 }
+                result
+            },
         }
     }
 
     fn modify(egraph: &mut EGraph<ArithLanguage, Self>, id: Id) {
         let io_pairs = egraph[id].data.clone();
+        // println!("<ObsEquiv::modify> io_pairs: {:?}", io_pairs);
+        // println!("{}", pretty_egraph(egraph, 2));
+        if io_pairs.is_empty() || io_pairs.first().unwrap().0.is_empty() {
+            return;
+        }
+        // println!("<ObsEquiv::modify> id: {}, io_pairs: {:?}", id, io_pairs);
+        // println!("{}", pretty_egraph(egraph, 2));
         for (inputs, output) in io_pairs {
-            let expr = egraph.id_to_expr(id);
-            let mut new_egraph = egraph.clone();
+            let expr = egraph.id_to_expr(id); // TODO: bug here.
+            // println!("<ObsEquiv::modify> id_to_expr: {:?}", expr.pretty(100));
+            let mut new_egraph = EGraph::new(ObsEquiv { pts: vec![(inputs, output)] }).with_explanations_enabled();
             let new_id = new_egraph.add_expr(&expr);
+            // println!("{}", pretty_egraph(&new_egraph, 2));
             new_egraph.rebuild();
             let new_output = new_egraph[new_id].data[0].1;
             if new_output != output {
-                egraph.union(id, new_egraph.add(ArithLanguage::Num(new_output)));
+                let num_id = egraph.add(ArithLanguage::Num(new_output));
+                egraph.union(id, num_id);
             }
         }
     }
@@ -142,12 +154,14 @@ impl<'a> Enumerator<'a> {
     }
 
     fn rebuild(&mut self, pts: &IOPairs) {
+        println!("<Enumerator::rebuild> self.egraph.analysis.pts: {:?}, pts: {:?}", self.egraph.analysis.pts, pts);
         let mut new_egraph = EGraph::new(ObsEquiv { pts: pts.clone() }).with_explanations_enabled();
         for (key, exprs) in &self.cache {
             for expr in exprs {
                 new_egraph.add_expr(expr);
             }
         }
+        println!("{}", pretty_egraph(&new_egraph, 2));
         new_egraph.rebuild();
         self.egraph = new_egraph;
     }
@@ -231,7 +245,8 @@ impl<'a> Enumerator<'a> {
                                     if let Some(exprs) = self.cache.get(&(prod.lhs.clone(), part_size)) {
                                         for expr in exprs {
                                             let mut new_expr = expr.clone();
-                                            let id = new_expr.add(lang_construct.clone());
+                                            // TODO: May be problematic if we use the id = 0
+                                            let id = new_expr.add(lang_construct.clone()); // we don't care the id of a unary operator
                                             // new_expr.add(ArithLanguage::Neg([id]));
                                             println!("<Enumerator::grow> expr: {}", new_expr.pretty(100));
                                             new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&new_expr)))
@@ -257,14 +272,22 @@ impl<'a> Enumerator<'a> {
         }
         // Update cache with new expressions
         for (key, exprs) in new_expressions {
+            for expr in &exprs {
+                self.egraph.add_expr(&expr);
+            }
             self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
         }
-        println!("{}", pretty_cache(&self.cache, 0));
+        self.egraph.rebuild();
+
+        println!("{}", pretty_cache(&self.cache, 2));
+        println!("{}", pretty_egraph(&self.egraph, 2));
         self.current_size = size;
     }
 
     fn enumerate(&mut self, size: usize, pts: &IOPairs) -> Vec<RecExpr<ArithLanguage>> {
         println!("<Enumerator::enumerate> size: {}, pts: {:?}", size, pts);
+        println!("{}", pretty_cache(&self.cache, 2));
+        println!("{}", pretty_egraph(&self.egraph, 2));
         if self.egraph.analysis.pts.len() != pts.len() {
             println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}, pts: {:?}", self.egraph.analysis.pts, pts);
             self.rebuild(pts);
@@ -287,10 +310,10 @@ impl<'a> Enumerator<'a> {
 
     fn satisfies_pts(&self, expr: &RecExpr<ArithLanguage>, pts: &IOPairs) -> bool {
         // println!("<Enumerator::satisfies_pts> expr: {:?}", expr.pretty(100));
-        if pts.is_empty() {
+        if pts.is_empty() || pts.first().unwrap().0.is_empty() {
             return true;
         }
-        let mut egraph = EGraph::new(ObsEquiv { pts: pts.clone() });
+        let mut egraph = EGraph::new(ObsEquiv { pts: pts.clone() }).with_explanations_enabled();
         let id = egraph.add_expr(expr);
         egraph.rebuild();
         egraph[id].data == *pts
@@ -310,17 +333,21 @@ impl EggSolver {
         let mut enumerator = Enumerator::new(&self.grammar);
         let mut pts = vec![];
         let start = std::time::Instant::now();
-        println!("Start: {:?}", start.elapsed().as_secs());
+        println!("<EggSolver::synthesize> Start time: {:?}", start);
         loop {
             let exprs = enumerator.enumerate(max_size, &pts);
             for expr in exprs {
                 println!("<EggSolver::synthesize> expr: {:?}", expr.pretty(100));
-                if let Some(pt) = self.verify(&expr, pts_all) {
-                    if pts.contains(&pt) {
+                if let Some(cex) = self.verify(&expr, pts_all) {
+                    println!("<EggSolver::synthesize> Found counterexample: {:?}", cex);
+                    if pts.contains(&cex) {
+                        println!("<EggSolver::synthesize> Found duplicate counterexample: {:?}", cex);
                         continue;
                     } else {
-                        println!("<EggSolver::synthesize> Found counterexample: {:?}", pt);
-                        pts.push(pt);
+                        println!("<EggSolver::synthesize> Found unique counterexample: {:?}", cex);
+                        pts.push(cex);
+                        println!("<EggSolver::synthesize> enumerator.cache: {}", pretty_cache(&enumerator.cache, 2));
+                        enumerator.rebuild(&pts);
                     }
                 } else {
                     println!("<EggSolver::synthesize> Found expression: {:?} within {:?} seconds", expr.pretty(100), start.elapsed().as_secs());
@@ -335,10 +362,17 @@ impl EggSolver {
     }
 
     fn verify(&self, expr: &RecExpr<ArithLanguage>, pts_all: &IOPairs) -> Option<(HashMap<String, i32>, i32)> {
+        println!("<EggSolver::verify> expr: {:?} = {:?}", expr.pretty(100), expr);
         for (inputs, expected_output) in pts_all {
+            println!("<EggSolver::verify> inputs: {:?}, expected_output: {:?}", inputs, expected_output);
             let mut egraph = EGraph::new(ObsEquiv { pts: vec![(inputs.clone(), *expected_output)] }).with_explanations_enabled();
-            let id = egraph.add_expr(expr);
+            let expr = expr.clone();
+            println!("<EggSolver::verify> pretty_egraph: {}", pretty_egraph(&egraph, 2));
+            let id = egraph.add_expr(&expr);
+            // println!("{}", pretty_egraph(&egraph, 2));
+            println!("<EggSolver::verify> id: {}", id);
             egraph.rebuild();
+            println!("<EggSolver::verify> egraph[id].data: {:?}", egraph[id].data);
             let actual_output = egraph[id].data[0].1;
             if actual_output != *expected_output {
                 return Some((inputs.clone(), *expected_output));
@@ -456,9 +490,12 @@ fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize
     result.push_str("EGraph:\n");
     for eclass in egraph.classes() {
         let expr = egraph.id_to_expr(eclass.id);
-        result.push_str(&format!("{}{}:[{}]\n", " ".repeat(starting_space), eclass.id, expr.pretty(100)));
+        result.push_str(&format!("{}{}:[{}] {:?}\n", " ".repeat(starting_space), eclass.id, expr.pretty(100), egraph[eclass.id].data.iter().map(| (inputs, output) | output).collect::<Vec<_>>()));
         for eqc in eclass.iter() {
-            result.push_str(&format!("{}<{}>: {:?}\n", " ".repeat(starting_space * 2), eqc, egraph[eclass.id].data));
+            result.push_str(&format!("{}<{}>\n", " ".repeat(starting_space * 2), eqc));
+        }
+        for (inputs, output) in &egraph[eclass.id].data {
+            result.push_str(&format!("{}{} -> {}\n", " ".repeat(starting_space * 2), inputs.iter().map(|(k, v)| format!("{:?}: {}", k, v)).collect::<Vec<_>>().join(", "), output));
         }
     }
     result.trim().to_string()
