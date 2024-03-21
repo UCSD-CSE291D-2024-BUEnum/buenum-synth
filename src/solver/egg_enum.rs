@@ -1,7 +1,8 @@
-use std::arch::x86_64::_mm_pause;
+use async_std::stream::{self, Stream};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::Hash;
+use async_std::task;
 
 use anyhow::Error;
 use egg::{rewrite as rw, *};
@@ -258,32 +259,37 @@ impl<'a> Enumerator<'a> {
         self.current_size = size;
     }
 
-    fn enumerate(&mut self, size: usize, pts: &IOPairs) -> Vec<RecExpr<ArithLanguage>> {
-        println!("<Enumerator::enumerate> size: {}, pts: {:?}", size, pts);
-        // println!("{}", pretty_cache(&self.cache, 2));
-        // println!("{}", pretty_egraph(&self.egraph, 2));
-        if self.egraph.analysis.pts.len() != pts.len() {
-            println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}, pts: {:?}", self.egraph.analysis.pts, pts);
-            self.rebuild(pts);
-            println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}, pts: {:?}", self.egraph.analysis.pts, pts);
-        }
-        let mut result = Vec::new();
-        while self.current_size < size && result.is_empty() {
-            // println!("<Enumerator::enumerate> Growing to size: {}", self.current_size + 1);
+
+async fn enumerate(&mut self, size: usize, pts: &IOPairs) -> Option<RecExpr<ArithLanguage>> {
+    println!("<Enumerator::enumerate> size: {}, pts: {:?}", size, pts);
+    if self.egraph.analysis.pts.len() != pts.len() {
+        println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}, pts: {:?}", self.egraph.analysis.pts, pts);
+        self.rebuild(pts);
+        println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}, pts: {:?}", self.egraph.analysis.pts, pts);
+    }
+    while self.current_size <= size {
+        if self.current_size < size {
+            println!("<Enumerator::enumerate> Growing to size: {}", self.current_size + 1);
             self.grow();
-            let start_nonterminal = &self.grammar.productions.first().unwrap().lhs;
-            // println!("<Enumerator::enumerate> start_nonterminal: {:?}, expr_size: {}", start_nonterminal, self.current_size);
-            let cache_max_size = self.cache.iter().map(|(k, _)| k.1).max().unwrap();
-            for expr in self.cache.get(&(start_nonterminal.clone(), cache_max_size)).unwrap() {
-                // println!("<Enumerator::enumerate> expr: {:?}", expr.pretty(100));
+        }
+        let start_nonterminal = &self.grammar.productions.first().unwrap().lhs;
+        let cache_max_size = self.cache.iter().map(|(k, _)| k.1).max().unwrap();
+        if let Some(exprs) = self.cache.get(&(start_nonterminal.clone(), cache_max_size)) {
+            for expr in exprs {
                 if self.satisfies_pts(expr, pts) {
                     println!("<Enumerator::enumerate> expr: {:?} satisfies pts: {:?}", expr.pretty(100), pts);
-                    result.push(expr.clone());
+                    return Some(expr.clone());
                 }
             }
         }
-        result
+        if self.current_size == size {
+            break;
+        }
+        task::yield_now().await;
     }
+    None
+}
+
 
     fn satisfies_pts(&self, expr: &RecExpr<ArithLanguage>, pts: &IOPairs) -> bool {
         // println!("<Enumerator::satisfies_pts> expr: {:?}", expr.pretty(100));
@@ -321,37 +327,25 @@ impl EggSolver {
         EggSolver { grammar }
     }
 
-    fn synthesize(&self, max_size: usize, pts_all: &IOPairs) -> Option<RecExpr<ArithLanguage>> {
-        let mut enumerator = Enumerator::new(&self.grammar);
-        let mut pts = vec![];
-        let start = std::time::Instant::now();
-        println!("<EggSolver::synthesize> Start time: {:?}", start);
-        while enumerator.current_size < max_size {
-            let exprs = enumerator.enumerate(max_size, &pts);
-            for expr in exprs {
-                // println!("<EggSolver::synthesize> expr: {:?}", expr.pretty(100));
-                if let Some(cex) = self.verify(&expr, pts_all) {
-                    // println!("<EggSolver::synthesize> Found counterexample: {:?}", cex);
-                    if pts.contains(&cex) {
-                        // println!("<EggSolver::synthesize> Found duplicate counterexample: {:?}", cex);
-                        continue;
-                    } else {
-                        println!("<EggSolver::synthesize> Found unique counterexample: {:?}", cex);
-                        pts.push(cex);
-                        // println!("<EggSolver::synthesize> enumerator.cache: {}", pretty_cache(&enumerator.cache, 2));
-                        // enumerator.rebuild(&pts);
-                    }
-                } else {
-                    println!("<EggSolver::synthesize> Found expression: {:?} within {:?} seconds", expr.pretty(100), start.elapsed().as_secs());
-                    return Some(expr);
-                }
-            }
-            if start.elapsed().as_secs() > 120 {
-                break;
+    
+async fn synthesize(&self, max_size: usize, pts_all: &IOPairs) -> Option<RecExpr<ArithLanguage>> {
+    let mut enumerator = Enumerator::new(&self.grammar);
+    let mut pts = vec![];
+    let start = std::time::Instant::now();
+    println!("<EggSolver::synthesize> Start time: {:?}", start);
+    while enumerator.current_size <= max_size && start.elapsed().as_secs() <= 120 {
+        if let Some(expr) = enumerator.enumerate(max_size, &pts).await {
+            if let Some(cex) = self.verify(&expr, pts_all) {
+                println!("<EggSolver::synthesize> Found unique counterexample: {:?}", cex);
+                pts.push(cex);
+            } else {
+                println!("<EggSolver::synthesize> Found expression: {:?} within {:?} seconds", expr.pretty(100), start.elapsed().as_secs());
+                return Some(expr);
             }
         }
-        None
     }
+    None
+}
 
     fn verify(&self, expr: &RecExpr<ArithLanguage>, pts_all: &IOPairs) -> Option<(HashMap<String, i32>, i32)> {
         // println!("<EggSolver::verify> expr: {:?} = {:?}", expr.pretty(100), expr);
@@ -375,7 +369,8 @@ impl EggSolver {
     }
 }
 
-fn main() {
+#[async_std::main]
+async fn main() {
     let grammar = Grammar {
         productions: vec![
             Production {
@@ -450,15 +445,15 @@ fn main() {
         (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 18), // 4 * 4 + 1 * 2 = 18
         (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 31), // 5 * 5 + 3 * 2 = 31
     ];
-    // let pts = vec![
-    //     // 2 * x + y
-    //     // (+ (* 2 x) y)
-    //     (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
-    //     (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
-    //     (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
-    // ];
+    let pts = vec![
+        // 2 * x + y
+        // (+ (* 2 x) y)
+        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
+        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
+        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
+    ];
 
-    if let Some(expr) = solver.synthesize(max_size, &pts) {
+    if let Some(expr) = solver.synthesize(max_size, &pts).await {
         println!("Synthesized expression: {}", expr.pretty(100));
     } else {
         println!("No expression could be synthesized.");
