@@ -1,11 +1,8 @@
-use async_std::stream::{self, Stream};
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::hash::Hash;
-use async_std::task;
+use async_std::task::{self, yield_now};
 
-use anyhow::Error;
 use egg::{rewrite as rw, *};
 use itertools::Itertools;
 
@@ -153,7 +150,7 @@ impl<'a> Enumerator<'a> {
         self.egraph = new_egraph;
     }
 
-    async fn grow(&mut self) {
+    /* async */ fn grow(&mut self) {
         let size = self.current_size + 1;
         let mut expr_size = self.current_size;
         // Base case: directly add numbers and variables for size 1
@@ -176,14 +173,14 @@ impl<'a> Enumerator<'a> {
                             },
                             _ => {}
                         }
-                        println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
+                        // println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
                         for (key, exprs) in new_expressions {
                             // for expr in &exprs {
                             //     self.egraph.add_expr(&expr);
                             // }
                             self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
                         }
-                        task::yield_now().await;
+                        // task::yield_now().await;
                     }
                 }
             }
@@ -244,30 +241,32 @@ impl<'a> Enumerator<'a> {
                             },
                             ArithLanguage::Neg(_) => {
                                 for part_size in 1..size {
+                                    let mut expr_parts = Vec::new();
                                     if let Some(exprs) = self.cache.get(&(prod.lhs.clone(), part_size)) {
-                                        for expr in exprs {
-                                            let mut new_expr = expr.clone();
-                                            let id = new_expr.add(lang_construct.clone()); // we don't care the id of a unary operator
-                                            expr_size = max(AstSize.cost_rec(&new_expr), expr_size);
-                                            // new_expr.add(ArithLanguage::Neg([id]));
-                                            // println!("<Enumerator::grow> expr: {}", new_expr.pretty(100));
-                                            new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&new_expr)))
-                                                           .or_insert_with(HashSet::new)
-                                                           .insert(new_expr);
-                                        }
+                                        expr_parts.push(exprs.iter().cloned().collect::<Vec<_>>());
+                                    }
+                                    for expr in expr_parts.into_iter().flatten() {
+                                        let mut new_expr = expr.clone();
+                                        let id = new_expr.add(lang_construct.clone()); // we don't care the id of a unary operator
+                                        expr_size = max(AstSize.cost_rec(&new_expr), expr_size);
+                                        // new_expr.add(ArithLanguage::Neg([id]));
+                                        // println!("<Enumerator::grow> expr: {}", new_expr.pretty(100));
+                                        new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&new_expr)))
+                                                        .or_insert_with(HashSet::new)
+                                                        .insert(new_expr);
                                     }
                                 }
                             },
                             _ => {}
                         }
-                        println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
+                        // println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
                         for (key, exprs) in new_expressions {
                             // for expr in &exprs {
                             //     self.egraph.add_expr(&expr);
                             // }
                             self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
                         }
-                        task::yield_now().await;
+                        // task::yield_now().await;
                     }
                 }
             }
@@ -287,34 +286,37 @@ impl<'a> Enumerator<'a> {
     }
 
 
-    async fn enumerate(&mut self, size: usize, pts: &IOPairs) -> Option<RecExpr<ArithLanguage>> {
-        println!("<Enumerator::enumerate> size: {}, pts: {:?}", size, pts);
+    /* async */fn enumerate(&mut self, size: usize, pts: &IOPairs) -> Vec<RecExpr<ArithLanguage>> {
+        println!("<Enumerator::enumerate> current size: {}", self.current_size);
         if self.egraph.analysis.pts.len() != pts.len() {
             println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}", self.egraph.analysis.pts);
             self.rebuild(pts);
             println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}", self.egraph.analysis.pts);
         }
+        let mut result = vec![];
         while self.current_size <= size {
             if self.current_size < size {
                 println!("<Enumerator::enumerate> Growing to size: {}", self.current_size + 1);
-                self.grow().await;
+                self.grow()/*.await*/;
             }
             let start_nonterminal = &self.grammar.productions.first().unwrap().lhs;
             let cache_max_size = self.cache.iter().map(|(k, _)| k.1).max().unwrap();
-            if let Some(exprs) = self.cache.get(&(start_nonterminal.clone(), cache_max_size)) {
-                for expr in exprs {
-                    if self.satisfies_pts(expr, pts) {
-                        println!("<Enumerator::enumerate> expr: {:?} satisfies pts: {:?}", expr.pretty(100), pts);
-                        return Some(expr.clone());
-                    }
+            let exprs = self.cache.iter().filter(|(k, _)| &k.0 == start_nonterminal && k.1 <= cache_max_size).map(|(_, v)| v).flatten().collect::<Vec<_>>();
+            result.clear();
+            for expr in exprs {
+                if self.satisfies_pts(expr, pts) {
+                    println!("<Enumerator::enumerate> expr: {:?} satisfies pts: {:?}", expr.pretty(100), pts);
+                    result.push(expr.clone());
                 }
+            }
+            if !result.is_empty() {
+                break;
             }
             if self.current_size == size {
                 break;
             }
-            task::yield_now().await;
         }
-        None
+        result
     }
 
 
@@ -354,25 +356,36 @@ impl EggSolver {
         EggSolver { grammar }
     }
 
-    
-async fn synthesize(&self, max_size: usize, pts_all: &IOPairs) -> Option<RecExpr<ArithLanguage>> {
-    let mut enumerator = Enumerator::new(&self.grammar);
-    let mut pts = vec![];
-    let start = std::time::Instant::now();
-    println!("<EggSolver::synthesize> Start time: {:?}", start);
-    while enumerator.current_size <= max_size && start.elapsed().as_secs() <= 120 {
-        if let Some(expr) = enumerator.enumerate(max_size, &pts).await {
-            if let Some(cex) = self.verify(&expr, pts_all) {
-                println!("<EggSolver::synthesize> Found unique counterexample: {:?}", cex);
-                pts.push(cex);
-            } else {
-                println!("<EggSolver::synthesize> Found expression: {:?} within {:?} seconds", expr.pretty(100), start.elapsed().as_secs());
-                return Some(expr);
+    /*async */fn synthesize(&self, max_size: usize, pts_all: &IOPairs) -> Vec<RecExpr<ArithLanguage>> {
+        let mut enumerator = Enumerator::new(&self.grammar);
+        let mut pts = vec![];
+        let start = std::time::Instant::now();
+        println!("<EggSolver::synthesize> Start time: {:?}", start);
+        while enumerator.current_size <= max_size && start.elapsed().as_secs() <= 120 {
+            let exprs = enumerator.enumerate(max_size, &pts)/*.await */;
+            println!("exprs.len(): {}", exprs.len());
+            let exprs_sat = exprs.iter().filter(|expr| self.verify(expr, pts_all).is_none()).collect::<Vec<_>>();
+            // let cexs: Option<_> = exprs.iter().map(|expr| self.verify(expr, pts_all)).fold(None, |acc, cex| acc.or(cex));
+            // let cexs: Vec<_> = exprs.iter().map(|expr| self.verify(expr, pts_all)).filter(|cex| cex.is_some()).map(|cex| cex.unwrap()).unique_by(|(inputs, output)| inputs.iter
+            // println!("cexs: {:?}", cexs);
+            // println!("exprs.len(): {}", exprs.len());
+            if !exprs_sat.is_empty() {
+                // target found
+                return exprs_sat.iter().cloned().map(|expr| expr.clone()).collect();
+            } else if !exprs.is_empty() {
+                // cannot find target within current size
+                let expr = exprs.first().unwrap();
+                if let Some(cex) = self.verify(expr, pts_all) {
+                    pts.push(cex);
+                } else {
+                    // unreachable
+                }
+            } {
+                // unreachable
             }
         }
+        vec![]
     }
-    None
-}
 
     fn verify(&self, expr: &RecExpr<ArithLanguage>, pts_all: &IOPairs) -> Option<(HashMap<String, i32>, i32)> {
         // println!("<EggSolver::verify> expr: {:?} = {:?}", expr.pretty(100), expr);
@@ -472,19 +485,32 @@ async fn main() {
         (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 18), // 4 * 4 + 1 * 2 = 18
         (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 31), // 5 * 5 + 3 * 2 = 31
     ];
-    // let pts = vec![
-    //     // 2 * x + y
-    //     // (+ (* 2 x) y)
-    //     (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
-    //     (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
-    //     (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
-    // ];
+    let pts = vec![
+        // 2 * x + y
+        // (+ (* 2 x) y)
+        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
+        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
+        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
+    ];
 
-    if let Some(expr) = solver.synthesize(max_size, &pts).await {
-        println!("Synthesized expression: {}", expr.pretty(100));
-    } else {
+    let pts = vec![
+        // x * y + x
+        // (+ (* x y) x)
+        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 3), // 1 * 2 + 1 = 3
+        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 15), // 3 * 4 + 3 = 15
+        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 8), // 4 * 1 + 4 = 8
+        (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 20), // 5 * 3 + 5 = 20
+        (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 18), // 6 * 2 + 6 = 18
+    ];
+
+    let exprs = solver.synthesize(max_size, &pts)/*.await*/;
+    if exprs.is_empty(){
         println!("No expression could be synthesized.");
         assert!(false);
+    } else {
+        for expr in exprs {
+            println!("Synthesized expression: {}", expr.pretty(100));
+        }
     }
 }
 
