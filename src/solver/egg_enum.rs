@@ -81,13 +81,17 @@ impl Analysis<ArithLanguage> for ObsEquiv {
         let sem = enode.semantics();
         let o = |i: &Id| &egraph[*i].data; // output
         match enode {
+            // Constants
             ArithLanguage::Num(n) => pts.iter().map(|(input, output)| (input.clone(), *n)).collect(),
+            // Varaibles
             ArithLanguage::Var(name) => pts.iter().map(|(input, output)| (input.clone(), sem(&[(input.clone(), *input.get(name).unwrap())]))).collect(),
+            // Unary operators
             ArithLanguage::Neg([id]) => o(id)
                 .iter()
                 .zip(pts)
                 .map(|((input, output), _)| (input.clone(), sem(&[(input.clone(), *output)])))
                 .collect(),
+            // Binary operators
             ArithLanguage::Add([a, b]) | ArithLanguage::Sub([a, b]) | ArithLanguage::Mul([a, b]) => o(a)
                 .iter()
                 .zip(o(b))
@@ -111,6 +115,7 @@ impl Analysis<ArithLanguage> for ObsEquiv {
             egraph.rebuild();
             let new_output = egraph[new_id].data.iter().find(|(i, _)| i == &inputs).map(|(_, o)| *o).unwrap_or(output);
             if new_output != output {
+                // the second element of the IOPair
                 let num_id = egraph.add(ArithLanguage::Num(new_output));
                 egraph.union(id, num_id);
             }
@@ -162,11 +167,8 @@ impl<'a> Enumerator<'a> {
                         let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
                         match lang_construct {
                             ArithLanguage::Num(_) | ArithLanguage::Var(_) => {
-                                // let mut expr = RecExpr::default();
                                 let id = self.egraph.add(lang_construct.clone());
                                 let expr = self.egraph.id_to_expr(id);
-                                expr_size = max(AstSize.cost_rec(&expr), expr_size);
-                                // expr.add(lang_construct.clone());
                                 new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                .or_insert_with(HashSet::new)
                                                .insert(expr);
@@ -175,9 +177,6 @@ impl<'a> Enumerator<'a> {
                         }
                         // println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
                         for (key, exprs) in new_expressions {
-                            // for expr in &exprs {
-                            //     self.egraph.add_expr(&expr);
-                            // }
                             self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
                         }
                         // task::yield_now().await;
@@ -208,11 +207,9 @@ impl<'a> Enumerator<'a> {
                                     }
                                     for expr_combination in expr_parts.into_iter().multi_cartesian_product() {
                                         let mut ids = Vec::new();
-    
                                         for e in expr_combination {
                                             ids.push(self.egraph.add_expr(&e));
                                         }
-                                        // println!("<Enumerator::grow> lang_construct: {:?}", lang_construct);
                                         let id = match lang_construct {
                                             ArithLanguage::Add(_) => {
                                                 self.egraph.add(ArithLanguage::Add([ids[0], ids[1]]))
@@ -226,13 +223,6 @@ impl<'a> Enumerator<'a> {
                                             _ => unreachable!(),
                                         };
                                         let expr = self.egraph.id_to_expr(id);
-                                        expr_size = max(AstSize.cost_rec(&expr), expr_size);
-
-                                        // if let ArithLanguage::Add(_) = lang_construct {
-                                        //     println!("<Enumerator::grow> expr: {}", expr.pretty(100));
-                                        // }
-                                        // println!("<Enumerator::grow> expr: {}", expr.pretty(100));
-    
                                         new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                        .or_insert_with(HashSet::new)
                                                        .insert(expr);
@@ -248,7 +238,7 @@ impl<'a> Enumerator<'a> {
                                     for expr in expr_parts.into_iter().flatten() {
                                         let mut new_expr = expr.clone();
                                         let id = new_expr.add(lang_construct.clone()); // we don't care the id of a unary operator
-                                        expr_size = max(AstSize.cost_rec(&new_expr), expr_size);
+                                        self.egraph.add_expr(&new_expr);
                                         // new_expr.add(ArithLanguage::Neg([id]));
                                         // println!("<Enumerator::grow> expr: {}", new_expr.pretty(100));
                                         new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&new_expr)))
@@ -363,14 +353,15 @@ impl EggSolver {
         println!("<EggSolver::synthesize> Start time: {:?}", start);
         while enumerator.current_size <= max_size && start.elapsed().as_secs() <= 120 {
             let exprs = enumerator.enumerate(max_size, &pts)/*.await */;
-            println!("exprs.len(): {}", exprs.len());
             let exprs_sat = exprs.iter().filter(|expr| self.verify(expr, pts_all).is_none()).collect::<Vec<_>>();
             // let cexs: Option<_> = exprs.iter().map(|expr| self.verify(expr, pts_all)).fold(None, |acc, cex| acc.or(cex));
             // let cexs: Vec<_> = exprs.iter().map(|expr| self.verify(expr, pts_all)).filter(|cex| cex.is_some()).map(|cex| cex.unwrap()).unique_by(|(inputs, output)| inputs.iter
-            // println!("cexs: {:?}", cexs);
-            // println!("exprs.len(): {}", exprs.len());
             if !exprs_sat.is_empty() {
                 // target found
+                // println!("Target found!");
+                // println!("{}", pretty_cache(&enumerator.cache, 2));
+                // println!("{}", pretty_egraph(&enumerator.egraph, 2));
+                // println!("Time elapsed: {:?}", start.elapsed());
                 return exprs_sat.iter().cloned().map(|expr| expr.clone()).collect();
             } else if !exprs.is_empty() {
                 // cannot find target within current size
