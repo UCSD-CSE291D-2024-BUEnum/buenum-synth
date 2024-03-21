@@ -1,4 +1,5 @@
 use async_std::stream::{self, Stream};
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::Hash;
@@ -124,6 +125,7 @@ struct Enumerator<'a> {
     grammar: &'a Grammar,
     egraph: EGraph<ArithLanguage, ObsEquiv>,
     cache: HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>,
+    checked_exprs: HashSet<RecExpr<ArithLanguage>>,
     current_size: usize,
 }
 
@@ -133,6 +135,7 @@ impl<'a> Enumerator<'a> {
             grammar,
             egraph: EGraph::new(ObsEquiv::default()).with_explanations_enabled(),
             cache: HashMap::new(),
+            checked_exprs: HashSet::new(),
             current_size: 0,
         }
     }
@@ -150,25 +153,37 @@ impl<'a> Enumerator<'a> {
         self.egraph = new_egraph;
     }
 
-    fn grow(&mut self) {
+    async fn grow(&mut self) {
         let size = self.current_size + 1;
-        let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
+        let mut expr_size = self.current_size;
         // Base case: directly add numbers and variables for size 1
         if size == 1 {
             for prod in &self.grammar.productions {
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
                         println!("<Enumerator::grow> prod(size={}): ({}, {}) => {:?}", size, prod.lhs, prod.lhs_type, lang_construct);
+                        let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
                         match lang_construct {
                             ArithLanguage::Num(_) | ArithLanguage::Var(_) => {
-                                let mut expr = RecExpr::default();
-                                expr.add(lang_construct.clone());
-                                new_expressions.entry((prod.lhs.clone(), size))
+                                // let mut expr = RecExpr::default();
+                                let id = self.egraph.add(lang_construct.clone());
+                                let expr = self.egraph.id_to_expr(id);
+                                expr_size = max(AstSize.cost_rec(&expr), expr_size);
+                                // expr.add(lang_construct.clone());
+                                new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                .or_insert_with(HashSet::new)
                                                .insert(expr);
                             },
                             _ => {}
                         }
+                        println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
+                        for (key, exprs) in new_expressions {
+                            // for expr in &exprs {
+                            //     self.egraph.add_expr(&expr);
+                            // }
+                            self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
+                        }
+                        task::yield_now().await;
                     }
                 }
             }
@@ -178,6 +193,7 @@ impl<'a> Enumerator<'a> {
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
                         println!("<Enumerator::grow> prod(size={}): ({}, {}) => {:?}", size, prod.lhs, prod.lhs_type, lang_construct);
+                        let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
                         match lang_construct {
                             ArithLanguage::Add(_) | ArithLanguage::Sub(_) | ArithLanguage::Mul(_) => {
                                 let num_nonterminals = lang_construct.children().len();
@@ -213,6 +229,8 @@ impl<'a> Enumerator<'a> {
                                             _ => unreachable!(),
                                         };
                                         let expr = self.egraph.id_to_expr(id);
+                                        expr_size = max(AstSize.cost_rec(&expr), expr_size);
+
                                         // if let ArithLanguage::Add(_) = lang_construct {
                                         //     println!("<Enumerator::grow> expr: {}", expr.pretty(100));
                                         // }
@@ -230,6 +248,7 @@ impl<'a> Enumerator<'a> {
                                         for expr in exprs {
                                             let mut new_expr = expr.clone();
                                             let id = new_expr.add(lang_construct.clone()); // we don't care the id of a unary operator
+                                            expr_size = max(AstSize.cost_rec(&new_expr), expr_size);
                                             // new_expr.add(ArithLanguage::Neg([id]));
                                             // println!("<Enumerator::grow> expr: {}", new_expr.pretty(100));
                                             new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&new_expr)))
@@ -241,17 +260,25 @@ impl<'a> Enumerator<'a> {
                             },
                             _ => {}
                         }
+                        println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
+                        for (key, exprs) in new_expressions {
+                            // for expr in &exprs {
+                            //     self.egraph.add_expr(&expr);
+                            // }
+                            self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
+                        }
+                        task::yield_now().await;
                     }
                 }
             }
         }
-        // Update cache with new expressions
-        for (key, exprs) in new_expressions {
-            for expr in &exprs {
-                self.egraph.add_expr(&expr);
-            }
-            self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
-        }
+        // // Update cache with new expressions
+        // for (key, exprs) in new_expressions {
+        //     for expr in &exprs {
+        //         self.egraph.add_expr(&expr);
+        //     }
+        //     self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
+        // }
         self.egraph.rebuild();
 
         // println!("{}", pretty_cache(&self.cache, 2));
@@ -260,35 +287,35 @@ impl<'a> Enumerator<'a> {
     }
 
 
-async fn enumerate(&mut self, size: usize, pts: &IOPairs) -> Option<RecExpr<ArithLanguage>> {
-    println!("<Enumerator::enumerate> size: {}, pts: {:?}", size, pts);
-    if self.egraph.analysis.pts.len() != pts.len() {
-        println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}, pts: {:?}", self.egraph.analysis.pts, pts);
-        self.rebuild(pts);
-        println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}, pts: {:?}", self.egraph.analysis.pts, pts);
-    }
-    while self.current_size <= size {
-        if self.current_size < size {
-            println!("<Enumerator::enumerate> Growing to size: {}", self.current_size + 1);
-            self.grow();
+    async fn enumerate(&mut self, size: usize, pts: &IOPairs) -> Option<RecExpr<ArithLanguage>> {
+        println!("<Enumerator::enumerate> size: {}, pts: {:?}", size, pts);
+        if self.egraph.analysis.pts.len() != pts.len() {
+            println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}", self.egraph.analysis.pts);
+            self.rebuild(pts);
+            println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}", self.egraph.analysis.pts);
         }
-        let start_nonterminal = &self.grammar.productions.first().unwrap().lhs;
-        let cache_max_size = self.cache.iter().map(|(k, _)| k.1).max().unwrap();
-        if let Some(exprs) = self.cache.get(&(start_nonterminal.clone(), cache_max_size)) {
-            for expr in exprs {
-                if self.satisfies_pts(expr, pts) {
-                    println!("<Enumerator::enumerate> expr: {:?} satisfies pts: {:?}", expr.pretty(100), pts);
-                    return Some(expr.clone());
+        while self.current_size <= size {
+            if self.current_size < size {
+                println!("<Enumerator::enumerate> Growing to size: {}", self.current_size + 1);
+                self.grow().await;
+            }
+            let start_nonterminal = &self.grammar.productions.first().unwrap().lhs;
+            let cache_max_size = self.cache.iter().map(|(k, _)| k.1).max().unwrap();
+            if let Some(exprs) = self.cache.get(&(start_nonterminal.clone(), cache_max_size)) {
+                for expr in exprs {
+                    if self.satisfies_pts(expr, pts) {
+                        println!("<Enumerator::enumerate> expr: {:?} satisfies pts: {:?}", expr.pretty(100), pts);
+                        return Some(expr.clone());
+                    }
                 }
             }
+            if self.current_size == size {
+                break;
+            }
+            task::yield_now().await;
         }
-        if self.current_size == size {
-            break;
-        }
-        task::yield_now().await;
+        None
     }
-    None
-}
 
 
     fn satisfies_pts(&self, expr: &RecExpr<ArithLanguage>, pts: &IOPairs) -> bool {
@@ -445,13 +472,13 @@ async fn main() {
         (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 18), // 4 * 4 + 1 * 2 = 18
         (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 31), // 5 * 5 + 3 * 2 = 31
     ];
-    let pts = vec![
-        // 2 * x + y
-        // (+ (* 2 x) y)
-        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
-        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
-        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
-    ];
+    // let pts = vec![
+    //     // 2 * x + y
+    //     // (+ (* 2 x) y)
+    //     (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
+    //     (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
+    //     (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
+    // ];
 
     if let Some(expr) = solver.synthesize(max_size, &pts).await {
         println!("Synthesized expression: {}", expr.pretty(100));
