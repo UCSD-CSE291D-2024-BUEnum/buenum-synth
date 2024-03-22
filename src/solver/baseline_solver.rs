@@ -656,7 +656,7 @@ impl Solver for BaselineSolver {
         match expr {
             Expr::ConstBool(b) => Box::from(z3::ast::Dynamic::from(z3::ast::Bool::from_bool(ctx, *b))),
             Expr::ConstInt(i) => Box::from(z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, *i))),
-            Expr::ConstBitVec(u) => Box::from(z3::ast::Dynamic::from(z3::ast::BV::from_u64(ctx, *u, 64))),
+            Expr::ConstBitVec(u) => Box::from(z3::ast::Dynamic::from(z3::ast::BV::from_i64(ctx, *u as i64, 32))),
             Expr::ConstString(s) => Box::from(z3::ast::Dynamic::from(z3::ast::String::from_str(ctx, s).unwrap())),
             Expr::Var(symbol, _) => Box::from(vars[symbol].clone()),
             Expr::FuncApply(name, exprs) => {
@@ -720,11 +720,7 @@ impl Solver for BaselineSolver {
             Expr::BvLshr(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvlshr),
             Expr::BvNeg(e) => bv_unary_operation!(self, e, vars, funcs, ctx, bvneg),
             Expr::BvUlt(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvult),
-            Expr::BvConst(v, width) => Box::from(z3::ast::Dynamic::from(z3::ast::BV::from_u64(
-                ctx,
-                *v as u64,
-                *width as u32,
-            ))),
+            Expr::BvConst(v, width) => Box::from(z3::ast::Dynamic::from(z3::ast::BV::from_i64(ctx, *v, *width as u32))),
             Expr::UnknownExpr => panic!("Unknown expression"),
         }
     }

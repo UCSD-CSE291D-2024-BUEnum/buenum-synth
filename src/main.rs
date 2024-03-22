@@ -10,7 +10,7 @@ mod solver;
 
 fn main() {
     #![allow(warnings)]
-    let test_path = "benchmarks/icfp_benchmarks/icfp-problems/5_1000.sl";
+    let test_path = "benchmarks/hackers_del/hd-01-d0-prog.sl";
     let test_name = "f";
     let contents = fs::read_to_string(&test_path).unwrap();
     let parsed = parser::parse(&contents).unwrap();
