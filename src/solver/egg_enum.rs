@@ -270,39 +270,33 @@ impl<'a> Enumerator<'a> {
                         match lang_construct {
                             ArithLanguage::Add(_) | ArithLanguage::Sub(_) | ArithLanguage::Mul(_) => {
                                 let num_nonterminals = lang_construct.children().len();
-                                let partitions: itertools::Combinations<std::ops::Range<usize>> = (1..size).combinations(num_nonterminals - 1);
-                                for partition in partitions {
-                                    let mut sizes = vec![1];
-                                    sizes.extend(partition);
-                                    sizes.push(size - sizes.iter().sum::<usize>());
-    
-                                    let mut expr_parts = Vec::new();
-                                    for part_size in &sizes {
-                                        if let Some(exprs) = self.cache.get(&(prod.lhs.clone(), *part_size)) {
-                                            expr_parts.push(exprs.iter().cloned().collect::<Vec<_>>());
+                                for left_size in 1..size {
+                                    let right_size = size - left_size;
+                                    let left_exprs = self.cache.get(&(prod.lhs.clone(), left_size)).cloned().unwrap();
+                                    let right_exprs = self.cache.get(&(prod.lhs.clone(), right_size)).cloned().unwrap();
+                                    for left_expr in &left_exprs {
+                                        for right_expr in &right_exprs {
+                                            let left_id = self.egraph.add_expr(left_expr);
+                                            let right_id = self.egraph.add_expr(right_expr);
+                            
+                                            let id = match lang_construct {
+                                                ArithLanguage::Add(_) => {
+                                                    self.egraph.add(ArithLanguage::Add([left_id, right_id]))
+                                                },
+                                                ArithLanguage::Sub(_) => {
+                                                    self.egraph.add(ArithLanguage::Sub([left_id, right_id]))
+                                                },
+                                                ArithLanguage::Mul(_) => {
+                                                    self.egraph.add(ArithLanguage::Mul([left_id, right_id]))
+                                                },
+                                                _ => unreachable!(),
+                                            };
+                            
+                                            let expr = self.egraph.id_to_expr(id);
+                                            new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
+                                                           .or_insert_with(HashSet::new)
+                                                           .insert(expr);
                                         }
-                                    }
-                                    for expr_combination in expr_parts.into_iter().multi_cartesian_product() {
-                                        let mut ids = Vec::new();
-                                        for e in expr_combination {
-                                            ids.push(self.egraph.add_expr(&e));
-                                        }
-                                        let id = match lang_construct {
-                                            ArithLanguage::Add(_) => {
-                                                self.egraph.add(ArithLanguage::Add([ids[0], ids[1]]))
-                                            },
-                                            ArithLanguage::Sub(_) => {
-                                                self.egraph.add(ArithLanguage::Sub([ids[0], ids[1]]))
-                                            },
-                                            ArithLanguage::Mul(_) => {
-                                                self.egraph.add(ArithLanguage::Mul([ids[0], ids[1]]))
-                                            },
-                                            _ => unreachable!(),
-                                        };
-                                        let expr = self.egraph.id_to_expr(id);
-                                        new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
-                                                       .or_insert_with(HashSet::new)
-                                                       .insert(expr);
                                     }
                                 }
                             },
