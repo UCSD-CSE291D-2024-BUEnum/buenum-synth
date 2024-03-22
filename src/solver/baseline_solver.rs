@@ -350,6 +350,27 @@ impl<'a, S: Solver> BaselineEnumerator<'a, S> {
                     }
                 }
             }
+            GExpr::Ite(c, t, e) => {
+                let mut depth = Vec::new();
+                depth_of_subs(d, 3, &mut depth, &mut Vec::new());
+                for d_i in depth {
+                    let c_terms = self.permutation(prod_name, c, expr, d_i[0]);
+                    let t_terms = self.permutation(prod_name, t, expr, d_i[1]);
+                    let e_terms = self.permutation(prod_name, e, expr, d_i[2]);
+
+                    for ct in c_terms.iter() {
+                        for tt in t_terms.iter() {
+                            for et in e_terms.iter() {
+                                ret.push(GExpr::Ite(
+                                    Box::new(ct.clone()),
+                                    Box::new(tt.clone()),
+                                    Box::new(et.clone()),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
             GExpr::ConstBool(_)
             | GExpr::ConstInt(_)
             | GExpr::ConstBitVec(_)
@@ -680,6 +701,12 @@ impl Solver for BaselineSolver {
                 self.expr_to_smt(e1, vars, funcs, ctx)
                     ._eq(&self.expr_to_smt(e2, vars, funcs, ctx)),
             )),
+            Expr::Ite(e1, e2, e3) => {
+                let cond = self.expr_to_smt(e1, vars, funcs, ctx).as_bool().unwrap();
+                let then = self.expr_to_smt(e2, vars, funcs, ctx);
+                let els = self.expr_to_smt(e3, vars, funcs, ctx);
+                Box::from(z3::ast::Dynamic::from(z3::ast::Bool::ite(&cond, &*then, &*els)))
+            }
             Expr::BvAnd(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvand),
             Expr::BvOr(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvor),
             Expr::BvXor(e1, e2) => bv_binary_operation!(self, e1, e2, vars, funcs, ctx, bvxor),

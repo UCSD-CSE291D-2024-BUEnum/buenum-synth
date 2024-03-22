@@ -28,6 +28,13 @@ impl Expr {
             Expr::Xor(left, right) => left.eval(env).xor(right.eval(env)),
             Expr::Iff(left, right) => left.eval(env).iff(right.eval(env)),
             Expr::Equal(left, right) => Value::Bool(left.eval(env) == right.eval(env)),
+            Expr::Ite(cond, t, e) => {
+                if cond.eval(env) == Value::Bool(true) {
+                    t.eval(env)
+                } else {
+                    e.eval(env)
+                }
+            }
             Expr::BvAnd(left, right) => left.eval(env).bitand(right.eval(env)),
             Expr::BvOr(left, right) => left.eval(env).bitor(right.eval(env)),
             Expr::BvXor(left, right) => left.eval(env).bitxor(right.eval(env)),
@@ -42,7 +49,7 @@ impl Expr {
             Expr::BvNeg(expr) => expr.eval(env).neg(),
             Expr::BvUlt(left, right) => left.eval(env).ult(right.eval(env)),
             Expr::BvConst(val, width) => Value::BitVec((*val as u64) & ((1 << *width) - 1)),
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 }
@@ -55,7 +62,7 @@ pub enum Value {
     String(String),
 
     #[default]
-    None
+    None,
 }
 
 macro_rules! impl_binary_op {
@@ -94,7 +101,7 @@ macro_rules! impl_unary_op {
                     $(
                         Value::$t(a) => Value::$t(a.$method()),
                     )+
-                    _ => panic!(concat!("Invalid operand for '", stringify!($method), "' operation")),
+                    _ => panic!(concat!("Invalid operand for '", stringify!($method), "' operation")), // TODO: debug
                 }
             }
         }
@@ -108,45 +115,45 @@ impl Value {
         match self {
             Value::Int(a) => Value::Int(-a),
             Value::BitVec(a) => Value::BitVec(-(a as i64) as u64),
-            _ => panic!("Invalid operand for 'neg' operation")
+            _ => panic!("Invalid operand for 'neg' operation"),
         }
     }
     fn and(self, other: Value) -> Value {
         match (self, other) {
             (Value::Bool(a), Value::Bool(b)) => Value::Bool(a && b),
-            _ => panic!("Invalid operands for 'and' operation")
+            _ => panic!("Invalid operands for 'and' operation"),
         }
     }
     fn or(self, other: Value) -> Value {
         match (self, other) {
             (Value::Bool(a), Value::Bool(b)) => Value::Bool(a || b),
-            _ => panic!("Invalid operands for 'or' operation")
+            _ => panic!("Invalid operands for 'or' operation"),
         }
     }
     fn xor(self, other: Value) -> Value {
         match (self, other) {
             (Value::Bool(a), Value::Bool(b)) => Value::Bool(a ^ b),
-            _ => panic!("Invalid operands for 'xor' operation")
+            _ => panic!("Invalid operands for 'xor' operation"),
         }
     }
     fn shl(self, other: Value) -> Value {
         match (self, other) {
             (Value::BitVec(a), Value::BitVec(b)) => Value::BitVec(a << b),
-            _ => panic!("Invalid operands for 'shl' operation")
+            _ => panic!("Invalid operands for 'shl' operation"),
         }
     }
 
     fn shr(self, other: Value) -> Value {
         match (self, other) {
             (Value::BitVec(a), Value::BitVec(b)) => Value::BitVec(a >> b),
-            _ => panic!("Invalid operands for 'shr' operation")
+            _ => panic!("Invalid operands for 'shr' operation"),
         }
     }
 
     fn iff(self, other: Value) -> Value {
         match (self, other) {
             (Value::Bool(a), Value::Bool(b)) => Value::Bool(a == b),
-            _ => panic!("Invalid operands for 'iff' operation")
+            _ => panic!("Invalid operands for 'iff' operation"),
         }
     }
 
@@ -154,7 +161,7 @@ impl Value {
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => Value::Bool(a < b),
             (Value::BitVec(a), Value::BitVec(b)) => Value::Bool(a < b),
-            _ => panic!("Invalid operands for 'ult' operation")
+            _ => panic!("Invalid operands for 'ult' operation"),
         }
     }
 }
@@ -162,7 +169,7 @@ impl Value {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct EvalEnv {
     pub vars: Vec<(String, Value)>,
-    pub funcs: Vec<(FuncName, FuncBody)>
+    pub funcs: Vec<(FuncName, FuncBody)>,
 }
 
 impl EvalEnv {

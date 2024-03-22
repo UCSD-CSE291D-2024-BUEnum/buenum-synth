@@ -15,7 +15,7 @@ pub struct SyGuSProg {
     pub declare_var: HashMap<Symbol, Sort>,
     pub constraints: Vec<Expr>,
     pub set_option: HashMap<OptName, OptValue>,
-    pub check_synth: bool
+    pub check_synth: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -23,7 +23,7 @@ pub enum SetLogic {
     LIA,
     BV,
     #[default]
-    Unknown
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -31,14 +31,14 @@ pub struct FuncBody {
     pub name: FuncName,
     pub params: Vec<(Symbol, Sort)>, // retain parameter order
     pub ret_sort: Sort,
-    pub body: Expr
+    pub body: Expr,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SynthFun {
     pub name: FuncName,
     pub params: Vec<(Symbol, Sort)>, // retain parameter order
-    pub ret_sort: Sort
+    pub ret_sort: Sort,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -50,7 +50,7 @@ pub enum Sort {
     String,
 
     #[default]
-    None
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -70,6 +70,7 @@ pub enum Expr {
     Xor(Box<Expr>, Box<Expr>),
     Iff(Box<Expr>, Box<Expr>), // if and only if
     Equal(Box<Expr>, Box<Expr>),
+    Ite(Box<Expr>, Box<Expr>, Box<Expr>), // if-then-else
 
     // BitVec
     BvAnd(Box<Expr>, Box<Expr>),
@@ -88,7 +89,7 @@ pub enum Expr {
     BvConst(i64, i32),            // param1: value, param2: bit width
 
     #[default]
-    UnknownExpr
+    UnknownExpr,
 }
 
 impl GExpr {
@@ -120,6 +121,11 @@ impl GExpr {
             GExpr::Xor(gexpr1, gexpr2) => Expr::Xor(Box::new(gexpr1.to_expr()), Box::new(gexpr2.to_expr())),
             GExpr::Iff(gexpr1, gexpr2) => Expr::Iff(Box::new(gexpr1.to_expr()), Box::new(gexpr2.to_expr())),
             GExpr::Equal(gexpr1, gexpr2) => Expr::Equal(Box::new(gexpr1.to_expr()), Box::new(gexpr2.to_expr())),
+            GExpr::Ite(gexpr1, gexpr2, gexpr3) => Expr::Ite(
+                Box::new(gexpr1.to_expr()),
+                Box::new(gexpr2.to_expr()),
+                Box::new(gexpr3.to_expr()),
+            ),
             GExpr::BvAnd(gexpr1, gexpr2) => Expr::BvAnd(Box::new(gexpr1.to_expr()), Box::new(gexpr2.to_expr())),
             GExpr::BvOr(gexpr1, gexpr2) => Expr::BvOr(Box::new(gexpr1.to_expr()), Box::new(gexpr2.to_expr())),
             GExpr::BvXor(gexpr1, gexpr2) => Expr::BvXor(Box::new(gexpr1.to_expr()), Box::new(gexpr2.to_expr())),
@@ -134,21 +140,21 @@ impl GExpr {
             GExpr::BvNeg(gexpr) => Expr::BvNeg(Box::new(gexpr.to_expr())),
             GExpr::BvUlt(gexpr1, gexpr2) => Expr::BvUlt(Box::new(gexpr1.to_expr()), Box::new(gexpr2.to_expr())),
             GExpr::BvConst(i, j) => Expr::BvConst(*i, *j),
-            GExpr::UnknownGExpr => Expr::UnknownExpr
+            GExpr::UnknownGExpr => Expr::UnknownExpr,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GrammarDef {
-    pub non_terminals: Vec<Production>
+    pub non_terminals: Vec<Production>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Production {
     pub lhs: ProdName,
     pub lhs_sort: ProdSort,
-    pub rhs: Vec<GTerm>
+    pub rhs: Vec<GTerm>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -158,7 +164,7 @@ pub enum GTerm {
     BfTerm(GExpr),
 
     #[default]
-    None
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -179,6 +185,7 @@ pub enum GExpr {
     Xor(Box<GExpr>, Box<GExpr>),
     Iff(Box<GExpr>, Box<GExpr>), // if and only if
     Equal(Box<GExpr>, Box<GExpr>),
+    Ite(Box<GExpr>, Box<GExpr>, Box<GExpr>), // if-then-else
 
     // BitVec
     BvAnd(Box<GExpr>, Box<GExpr>),
@@ -197,5 +204,5 @@ pub enum GExpr {
     BvConst(i64, i32),              // param1: value, param2: bit width
 
     #[default]
-    UnknownGExpr
+    UnknownGExpr,
 }
