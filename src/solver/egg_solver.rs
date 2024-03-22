@@ -5,6 +5,7 @@ use async_std::task::{self, yield_now};
 
 use egg::{rewrite as rw, *};
 use itertools::Itertools;
+use z3_sys::Z3_eval_smtlib2_string;
 use std::vec;
 
 use strum_macros::Display;
@@ -525,7 +526,17 @@ impl<'a> EggSolver<'a> {
         var_decls: &[(String, Sort)],
         target_fn: &dyn Fn(&HashMap<String, i64>) -> i64,
     ) -> Result<(), HashMap<String, i64>> {
-        unimplemented!("EggSolver::verify not implemented")
+        let cfg = Config::new();
+        let ctx = Context::new(&cfg);
+        let solver = Solver::new(&ctx);
+        // TODO: use z3 to parse the expression and evaluate it
+        // let return_val = unsafe {
+        //     Z3_eval_smtlib2_string(
+        //         ctx, 
+        //         self.expr_str(expr).as_ptr()
+        //     )
+        // };
+        Ok(())
     }
 
     fn expr_str(&self, expr: &RecExpr<SyGuSLanguage>) -> String {
@@ -666,7 +677,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_egg_enum() {
+    fn test_main() {
         main();
     }
 }
