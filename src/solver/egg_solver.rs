@@ -5,8 +5,20 @@ use async_std::task::{self, yield_now};
 
 use egg::{rewrite as rw, *};
 use itertools::Itertools;
+use std::vec;
 
-use crate::parser::ast::{FuncName, Sort};
+use strum_macros::Display;
+use z3::ast::{
+    Ast,
+    Dynamic
+};
+use z3::{
+    ast::Bool,
+    Config,
+    Context,
+    Solver
+};
+use crate::parser::ast::{self, Expr, FuncName, Sort};
 
 define_language! {
     pub enum SyGuSLanguage {
@@ -14,9 +26,9 @@ define_language! {
         ConstInt(i64),
         ConstBitVec(u64),
         ConstString(String),
-        Var(String, Sort),
+        Var(String),
         FuncApply(FuncName, Vec<Id>),
-        BvConst(i64, i32),
+        BvConst(i64),
         // Bool
         "not" = Not([Id; 1]),
         "and" = And([Id; 2]),
@@ -47,14 +59,14 @@ impl SyGuSLanguage {
             SyGuSLanguage::ConstInt(n) => Box::new(move |_| *n),
             SyGuSLanguage::ConstBitVec(n) => Box::new(move |_| *n as i64),
             SyGuSLanguage::ConstString(_) => unimplemented!("Semantics for ConstString not implemented"),
-            SyGuSLanguage::Var(name, _) => Box::new(move |env| {
+            SyGuSLanguage::Var(name) => Box::new(move |env| {
                 env.iter()
                     .find_map(|(input, _)| input.get(name))
                     .cloned()
                     .unwrap_or(0)
             }),
             SyGuSLanguage::FuncApply(_, _) => unimplemented!("Semantics for FuncApply not implemented"),
-            SyGuSLanguage::BvConst(n, _) => Box::new(move |_| *n),
+            SyGuSLanguage::BvConst(n) => Box::new(move |_| *n),
             SyGuSLanguage::Not([_]) => Box::new(move |args| if args[0].1 == 0 { 1 } else { 0 }),
             SyGuSLanguage::And([_, _]) => Box::new(move |args| if args[0].1 != 0 && args[1].1 != 0 { 1 } else { 0 }),
             SyGuSLanguage::Or([_, _]) => Box::new(move |args| if args[0].1 != 0 || args[1].1 != 0 { 1 } else { 0 }),
@@ -78,8 +90,8 @@ impl SyGuSLanguage {
     }
 }
 type ProdName = String;
-type IOPairs = Vec<(HashMap<String, i32>, i32)>;
-type IOPairsRef<'a> = Vec<(&'a HashMap<String, i32> , i32)>;
+type IOPairs = Vec<(HashMap<String, i64>, i64)>;
+type IOPairsRef<'a> = Vec<(&'a HashMap<String, i64> , i64)>;
 
 #[derive(Debug, Clone)]
 struct Production {
@@ -129,9 +141,9 @@ impl Analysis<SyGuSLanguage> for ObsEquiv {
             SyGuSLanguage::ConstInt(n) => pts.iter().map(|(input, _)| (input.clone(), *n)).collect(),
             SyGuSLanguage::ConstBitVec(n) => pts.iter().map(|(input, _)| (input.clone(), *n as i64)).collect(),
             SyGuSLanguage::ConstString(_) => unimplemented!("Semantics for ConstString not implemented"),
-            SyGuSLanguage::BvConst(n, _) => pts.iter().map(|(input, _)| (input.clone(), *n)).collect(),
+            SyGuSLanguage::BvConst(n) => pts.iter().map(|(input, _)| (input.clone(), *n)).collect(),
             // Variables
-            SyGuSLanguage::Var(name, _) => pts.iter().map(|(input, _)| (input.clone(), sem(&[(input.clone(), *input.get(name).unwrap_or(&0))]))).collect(),
+            SyGuSLanguage::Var(name) => pts.iter().map(|(input, _)| (input.clone(), sem(&[(input.clone(), *input.get(name).unwrap_or(&0))]))).collect(),
             // Function application
             SyGuSLanguage::FuncApply(_, _) => unimplemented!("Semantics for FuncApply not implemented"),
             // Unary operators
@@ -270,11 +282,11 @@ impl<'a> Enumerator<'a> {
     //     self.egraph.rebuild();
     // }
 
-    fn collect_equivs(&self) -> HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> {
-        let mut equivs: HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> = HashMap::new();
+    fn collect_equivs(&self) -> HashMap<Vec<(Vec<(String, i64)>, i64)>, HashSet<Id>> {
+        let mut equivs: HashMap<Vec<(Vec<(String, i64)>, i64)>, HashSet<Id>> = HashMap::new();
         for eclass in self.egraph.classes() {
-            let data: Vec<(Vec<(String, i32)>, i32)> = eclass.data.iter().map(|(i, o)| {
-                let mut vec: Vec<(String, i32)> = i.clone().into_iter().collect();
+            let data: Vec<(Vec<(String, i64)>, i64)> = eclass.data.iter().map(|(i, o)| {
+                let mut vec: Vec<(String, i64)> = i.clone().into_iter().collect();
                 vec.sort();
                 (vec, *o)
             }).collect::<Vec<_>>();
@@ -308,7 +320,7 @@ impl<'a> Enumerator<'a> {
                         let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<SyGuSLanguage>>> = HashMap::new();
                         match lang_construct {
                             SyGuSLanguage::ConstBool(_) | SyGuSLanguage::ConstInt(_) | SyGuSLanguage::ConstBitVec(_) |
-                            SyGuSLanguage::ConstString(_) | SyGuSLanguage::BvConst(_, _) | SyGuSLanguage::Var(_, _) => {
+                            SyGuSLanguage::ConstString(_) | SyGuSLanguage::BvConst(_) | SyGuSLanguage::Var(_) => {
                                 let id = self.egraph.add(lang_construct.clone());
                                 let expr = self.egraph.id_to_expr(id);
                                 new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
@@ -465,37 +477,38 @@ impl<'a> Enumerator<'a> {
     }
 }
 
-struct EggSolver {
-    grammar: Grammar,
+struct EggSolver<'a> {
+    enumerator: Enumerator<'a>,
 }
 
-impl EggSolver {
-    fn new(grammar: Grammar) -> Self {
-        EggSolver { grammar }
+impl<'a> EggSolver<'a> {
+    fn new(enumerator: Enumerator<'a>) -> Self {
+        EggSolver { 
+            enumerator
+        }
     }
 
-    /*async */fn synthesize(&self, max_size: usize, pts_all: &IOPairs) -> Vec<RecExpr<SyGuSLanguage>> {
-        let mut enumerator = Enumerator::new(&self.grammar);
+    /*async */fn synthesize(&mut self, max_size: usize, pts_all: &IOPairs, var_decls: &[(String, Sort)], target_fn: &dyn Fn(&HashMap<String, i64>) -> i64) -> Vec<RecExpr<SyGuSLanguage>> {
         let mut pts = vec![];
         let start = std::time::Instant::now();
         println!("<EggSolver::synthesize> Start time: {:?}", start);
-        while enumerator.current_size <= max_size && start.elapsed().as_secs() <= 120 {
-            let exprs = enumerator.enumerate(max_size, &pts)/*.await */;
-            let exprs_sat = exprs.iter().filter(|expr| self.verify(expr, pts_all).is_none()).collect::<Vec<_>>();
+        while self.enumerator.current_size <= max_size && start.elapsed().as_secs() <= 120 {
+            let exprs = self.enumerator.enumerate(max_size, &pts)/*.await */;
+            let exprs_sat = exprs.iter().filter(|expr| self.verify(expr, var_decls, target_fn).is_ok()).collect::<Vec<_>>();
             // let cexs: Option<_> = exprs.iter().map(|expr| self.verify(expr, pts_all)).fold(None, |acc, cex| acc.or(cex));
             // let cexs: Vec<_> = exprs.iter().map(|expr| self.verify(expr, pts_all)).filter(|cex| cex.is_some()).map(|cex| cex.unwrap()).unique_by(|(inputs, output)| inputs.iter
             if !exprs_sat.is_empty() {
                 // target found
                 // println!("Target found!");
                 // println!("{}", pretty_cache(&enumerator.cache, 2));
-                println!("{}", pretty_egraph(&enumerator.egraph, 2));
+                println!("{}", pretty_egraph(&self.enumerator.egraph, 2));
                 // println!("Time elapsed: {:?}", start.elapsed());
                 return exprs_sat.iter().cloned().map(|expr| expr.clone()).collect();
             } else if !exprs.is_empty() {
                 // cannot find target within current size
                 let expr = exprs.first().unwrap();
-                if let Some(cex) = self.verify(expr, pts_all) {
-                    pts.push(cex);
+                if let Some(cex) = self.verify(expr, var_decls, target_fn).err() {
+                    pts.push((cex.clone(), target_fn(&cex)));
                 } else {
                     // unreachable
                 }
@@ -506,28 +519,19 @@ impl EggSolver {
         vec![]
     }
 
-    fn verify(&self, expr: &RecExpr<SyGuSLanguage>, pts_all: &IOPairs) -> Option<(HashMap<String, i32>, i32)> {
-        // println!("<EggSolver::verify> expr: {:?} = {:?}", expr.pretty(100), expr);
-        for (inputs, expected_output) in pts_all {
-            // println!("<EggSolver::verify> inputs: {:?}, expected_output: {:?}", inputs, expected_output);
-            let mut egraph = EGraph::new(ObsEquiv { pts: vec![(inputs.clone(), *expected_output)] }).with_explanations_enabled();
-            let expr = expr.clone();
-            // println!("<EggSolver::verify> pretty_egraph: {}", pretty_egraph(&egraph, 2));
-            let id = egraph.add_expr(&expr);
-            // println!("<EggSolver::verify> expr: {:?} = {:?}", expr.pretty(100), expr);
-            // println!("{}", pretty_egraph(&egraph, 2));
-            egraph.rebuild();
-            // println!("<EggSolver::verify> egraph[id].data: {:?}", egraph[id].data);
-            let actual_output = egraph[id].data[0].1;
-            // println!("<EggSolver::verify> actual_output: {:?}", actual_output);
-            if actual_output != *expected_output {
-                return Some((inputs.clone(), *expected_output));
-            }
-        }
-        None
+    fn verify(
+        &self,
+        expr: &RecExpr<SyGuSLanguage>,
+        var_decls: &[(String, Sort)],
+        target_fn: &dyn Fn(&HashMap<String, i64>) -> i64,
+    ) -> Result<(), HashMap<String, i64>> {
+        unimplemented!("EggSolver::verify not implemented")
+    }
+
+    fn expr_str(&self, expr: &RecExpr<SyGuSLanguage>) -> String {
+        expr.pretty(100)
     }
 }
-
 #[async_std::main]
 async fn main() {
     let grammar = Grammar {
@@ -537,7 +541,7 @@ async fn main() {
                 lhs_type: "Op".to_string(),
                 rhs: vec![
                     ProdComponent::LhsName("S".to_string()),
-                    ProdComponent::LanguageConstruct(ArithLanguage::Add(Default::default())),
+                    ProdComponent::LanguageConstruct(SyGuSLanguage::BvAdd(Default::default())),
                     ProdComponent::LhsName("S".to_string()),
                 ]
             },
@@ -546,24 +550,7 @@ async fn main() {
                 lhs_type: "Op".to_string(),
                 rhs: vec![
                     ProdComponent::LhsName("S".to_string()),
-                    ProdComponent::LanguageConstruct(ArithLanguage::Sub(Default::default())),
-                    ProdComponent::LhsName("S".to_string()),
-                ]
-            },
-            Production {
-                lhs: "S".to_string(),
-                lhs_type: "Op".to_string(),
-                rhs: vec![
-                    ProdComponent::LhsName("S".to_string()),
-                    ProdComponent::LanguageConstruct(ArithLanguage::Mul(Default::default())),
-                    ProdComponent::LhsName("S".to_string()),
-                ]
-            },
-            Production {
-                lhs: "S".to_string(),
-                lhs_type: "Op".to_string(),
-                rhs: vec![
-                    ProdComponent::LanguageConstruct(ArithLanguage::Neg(Default::default())),
+                    ProdComponent::LanguageConstruct(SyGuSLanguage::BvMul(Default::default())),
                     ProdComponent::LhsName("S".to_string()),
                 ]
             },
@@ -571,64 +558,68 @@ async fn main() {
                 lhs: "S".to_string(),
                 lhs_type: "Var".to_string(),
                 rhs: vec![
-                    ProdComponent::LanguageConstruct(ArithLanguage::Var("x".to_string())),
-                    ProdComponent::LanguageConstruct(ArithLanguage::Var("y".to_string())),
+                    ProdComponent::LanguageConstruct(SyGuSLanguage::Var("x".to_string())),
+                    ProdComponent::LanguageConstruct(SyGuSLanguage::Var("y".to_string())),
                 ]
             },
             Production {
                 lhs: "S".to_string(),
-                lhs_type: "Num".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(0))]
+                lhs_type: "Const".to_string(),
+                rhs: vec![ProdComponent::LanguageConstruct(SyGuSLanguage::BvConst(0))]
             },
             Production {
                 lhs: "S".to_string(),
-                lhs_type: "Num".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(1))]
+                lhs_type: "Const".to_string(),
+                rhs: vec![ProdComponent::LanguageConstruct(SyGuSLanguage::BvConst(1))]
             },
             Production {
                 lhs: "S".to_string(),
-                lhs_type: "Num".to_string(),
-                rhs: vec![ProdComponent::LanguageConstruct(ArithLanguage::Num(2))]
+                lhs_type: "Const".to_string(),
+                rhs: vec![ProdComponent::LanguageConstruct(SyGuSLanguage::BvConst(2))]
             },
         ]
     };
 
-    let solver = EggSolver::new(grammar);
+    let enumerator = Enumerator::new(&grammar);
+    let mut solver = EggSolver::new(enumerator);
     let max_size = 7;
 
+    let var_decls = vec![
+        ("x".to_string(), Sort::BitVec(32)),("y".to_string(), Sort::BitVec(32)),
+        ];
+
+    let target_fn = |inputs: &HashMap<String, i64>| {
+        let x = *inputs.get("x").unwrap() as u64;
+        let y = *inputs.get("y").unwrap() as u64;
+        ((x * x) + (y * 2)) as i64
+    };
+
     let pts = vec![
-        // x * x + y * 2
-        // (+ (* x x) (* y 2)
         (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 5), // 1 * 1 + 2 * 2 = 5
         (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 17), // 3 * 3 + 4 * 2 = 17
         (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 18), // 4 * 4 + 1 * 2 = 18
         (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 31), // 5 * 5 + 3 * 2 = 31
     ];
-    // let pts = vec![
-    //     // 2 * x + y
-    //     // (+ (* 2 x) y)
-    //     (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
-    //     (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
-    //     (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
-    // ];
 
-    // let pts = vec![
-    //     // x * y + x
-    //     // (+ (* x y) x)
-    //     (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 3), // 1 * 2 + 1 = 3
-    //     (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 15), // 3 * 4 + 3 = 15
-    //     (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 8), // 4 * 1 + 4 = 8
-    //     (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 20), // 5 * 3 + 5 = 20
-    //     (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 18), // 6 * 2 + 6 = 18
-    // ];
+    let var_decls = vec![
+        ("x".to_string(), Sort::BitVec(32)),
+        ("y".to_string(), Sort::BitVec(32)),
+    ];
 
-    let exprs = solver.synthesize(max_size, &pts)/*.await*/;
-    if exprs.is_empty(){
+    let exprs = solver.synthesize(max_size, &pts, &var_decls, &target_fn)/*.await*/;
+    if exprs.is_empty() {
         println!("No expression could be synthesized.");
         assert!(false);
     } else {
-        for expr in exprs {
+        for expr in &exprs {
             println!("Synthesized expression: {}", expr.pretty(100));
+            match solver.verify(expr, &var_decls, &target_fn) {
+                Ok(()) => println!("Verification succeeded"),
+                Err(counter_example) => {
+                    println!("Verification failed with counter-example: {:?}", counter_example);
+                    assert!(false);
+                }
+            }
         }
     }
 }
