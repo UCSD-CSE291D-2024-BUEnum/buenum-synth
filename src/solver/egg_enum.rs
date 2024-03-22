@@ -105,25 +105,27 @@ impl Analysis<ArithLanguage> for ObsEquiv {
         }
     }
     fn modify(egraph: &mut EGraph<ArithLanguage, Self>, id: Id) {
-        let io_pairs = egraph[id].data.clone();
-        if io_pairs.is_empty() || io_pairs.first().unwrap().0.is_empty() {
-            return;
-        }
-        for (inputs, output) in io_pairs {
-            let expr = egraph.id_to_expr(id);
-            let new_id = egraph.add_expr(&expr);
-            egraph.rebuild();
-            let new_output = egraph[new_id].data.iter().find(|(i, _)| i == &inputs).map(|(_, o)| *o).unwrap_or(output);
-            if new_output != output {
-                // the second element of the IOPair
-                let num_id = egraph.add(ArithLanguage::Num(new_output));
-                egraph.union(id, num_id);
-            }
-        }
+        // // We don't need to do anything here because the data consistency is guaranteed by the `enumerator.rebuild()`.
+        // let io_pairs = egraph[id].data.clone();
+        // if io_pairs.is_empty() || io_pairs.first().unwrap().0.is_empty() {
+        //     return;
+        // }
+        // for (inputs, output) in io_pairs {
+        //     let expr = egraph.id_to_expr(id);
+        //     let new_id = egraph.add_expr(&expr);
+        //     egraph.rebuild();
+        //     let new_output = egraph[new_id].data.iter().find(|(i, _)| i == &inputs).map(|(_, o)| *o).unwrap();
+        //     if new_output != output {
+        //         // the second element of the IOPair
+        //         let num_id = egraph.add(ArithLanguage::Num(new_output));
+        //         egraph.union(id, num_id);
+        //     }
+        // }
     }
 }
 
 struct Enumerator<'a> {
+    old_egraphs: Vec<EGraph<ArithLanguage, ObsEquiv>>,
     grammar: &'a Grammar,
     egraph: EGraph<ArithLanguage, ObsEquiv>,
     cache: HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>,
@@ -134,6 +136,7 @@ struct Enumerator<'a> {
 impl<'a> Enumerator<'a> {
     fn new(grammar: &'a Grammar) -> Self {
         Enumerator {
+            old_egraphs: Vec::new(),
             grammar,
             egraph: EGraph::new(ObsEquiv::default()).with_explanations_enabled(),
             cache: HashMap::new(),
@@ -143,17 +146,65 @@ impl<'a> Enumerator<'a> {
     }
 
     fn rebuild(&mut self, pts: &IOPairs) {
-        // println!("<Enumerator::rebuild> self.egraph.analysis.pts: {:?}, pts: {:?}", self.egraph.analysis.pts, pts);
         let mut new_egraph = EGraph::new(ObsEquiv { pts: pts.clone() }).with_explanations_enabled();
         for (key, exprs) in &self.cache {
             for expr in exprs {
                 new_egraph.add_expr(expr);
             }
         }
-        // println!("{}", pretty_egraph(&new_egraph, 2));
+        self.merge_equivs();
         new_egraph.rebuild();
         self.egraph = new_egraph;
     }
+
+    // fn rebuild(&mut self, pts: &IOPairs) {
+    //     let mut inconsistent_eclasses = HashSet::new();
+    //     // Identify inconsistent eclasses
+    //     for (key, exprs) in &self.cache {
+    //         for expr in exprs {
+    //             let id = self.egraph.add_expr(expr);
+    //             let eclass = &self.egraph[id];
+
+    //             let mut output = HashSet::new();
+    //             for (inputs, _) in pts {
+    //                 for node in &eclass.nodes {
+    //                     if let Some((i, o)) = ObsEquiv::make(&self.egraph, node).iter().find(|(i, _)| i == inputs) {
+    //                         output.insert(*o);
+    //                     }
+    //                     if output.len() > 1 {
+    //                         break;
+    //                     }
+    //                 }
+    //                 if output.len() > 1 {
+    //                     inconsistent_eclasses.insert(id);
+    //                     break;
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     let new_egraph = EGraph::new(ObsEquiv { pts: pts.clone() }).with_explanations_enabled();
+    //     let mut old_egraph = std::mem::replace(&mut self.egraph, new_egraph);
+
+    //     // Add consistent eclasses to the new egraph
+    //     for (key, exprs) in &self.cache {
+    //         for expr in exprs {
+    //             let id = old_egraph.add_expr(expr);
+    //             if !inconsistent_eclasses.contains(&id) {
+    //                 self.egraph.add_expr(expr);
+    //             }
+    //         }
+    //     }
+    //     // Add inconsistent eclasses to the new egraph
+    //     for id in inconsistent_eclasses {
+    //         for node in &old_egraph[id].nodes {
+    //             let new_id = self.egraph.add(node.clone());
+    //         }
+    //     }
+    //     // Merge equivalent expressions in the new egraph
+    //     self.merge_equivs();
+    //     self.egraph.rebuild();
+    // }
 
     fn collect_equivs(&self) -> HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> {
         let mut equivs: HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> = HashMap::new();
@@ -503,23 +554,23 @@ async fn main() {
         (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 18), // 4 * 4 + 1 * 2 = 18
         (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 31), // 5 * 5 + 3 * 2 = 31
     ];
-    let pts = vec![
-        // 2 * x + y
-        // (+ (* 2 x) y)
-        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
-        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
-        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
-    ];
+    // let pts = vec![
+    //     // 2 * x + y
+    //     // (+ (* 2 x) y)
+    //     (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
+    //     (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
+    //     (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
+    // ];
 
-    let pts = vec![
-        // x * y + x
-        // (+ (* x y) x)
-        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 3), // 1 * 2 + 1 = 3
-        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 15), // 3 * 4 + 3 = 15
-        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 8), // 4 * 1 + 4 = 8
-        (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 20), // 5 * 3 + 5 = 20
-        (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 18), // 6 * 2 + 6 = 18
-    ];
+    // let pts = vec![
+    //     // x * y + x
+    //     // (+ (* x y) x)
+    //     (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 3), // 1 * 2 + 1 = 3
+    //     (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 15), // 3 * 4 + 3 = 15
+    //     (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 8), // 4 * 1 + 4 = 8
+    //     (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 20), // 5 * 3 + 5 = 20
+    //     (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 18), // 6 * 2 + 6 = 18
+    // ];
 
     let exprs = solver.synthesize(max_size, &pts)/*.await*/;
     if exprs.is_empty(){
