@@ -155,9 +155,35 @@ impl<'a> Enumerator<'a> {
         self.egraph = new_egraph;
     }
 
+    fn collect_equivs(&self) -> HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> {
+        let mut equivs: HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> = HashMap::new();
+        for eclass in self.egraph.classes() {
+            let data: Vec<(Vec<(String, i32)>, i32)> = eclass.data.iter().map(|(i, o)| {
+                let mut vec: Vec<(String, i32)> = i.clone().into_iter().collect();
+                vec.sort();
+                (vec, *o)
+            }).collect::<Vec<_>>();
+            let key = data;
+            equivs.entry(key).or_insert(HashSet::new()).insert(eclass.id);
+        }
+        equivs
+    }
+
+    fn merge_equivs(&mut self) {
+        let equivs = self.collect_equivs();
+        // merge those equivs
+        for (k, v) in equivs {
+            let mut iter = v.into_iter();
+            if let Some(first) = iter.next() {
+                for id in iter {
+                    self.egraph.union(first, id);
+                }
+            }
+        }
+    }
+
     /* async */ fn grow(&mut self) {
         let size = self.current_size + 1;
-        let mut expr_size = self.current_size;
         // Base case: directly add numbers and variables for size 1
         if size == 1 {
             for prod in &self.grammar.productions {
@@ -268,6 +294,7 @@ impl<'a> Enumerator<'a> {
         //     }
         //     self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
         // }
+        self.merge_equivs();
         self.egraph.rebuild();
 
         // println!("{}", pretty_cache(&self.cache, 2));
@@ -360,7 +387,7 @@ impl EggSolver {
                 // target found
                 // println!("Target found!");
                 // println!("{}", pretty_cache(&enumerator.cache, 2));
-                // println!("{}", pretty_egraph(&enumerator.egraph, 2));
+                println!("{}", pretty_egraph(&enumerator.egraph, 2));
                 // println!("Time elapsed: {:?}", start.elapsed());
                 return exprs_sat.iter().cloned().map(|expr| expr.clone()).collect();
             } else if !exprs.is_empty() {
