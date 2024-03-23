@@ -48,7 +48,7 @@ impl Expr {
             Expr::BvLshr(left, right) => left.eval(env).shr(right.eval(env)),
             Expr::BvNeg(expr) => expr.eval(env).neg(),
             Expr::BvUlt(left, right) => left.eval(env).ult(right.eval(env)),
-            Expr::BvConst(val, width) => Value::BitVec((*val as u64) & ((1 << *width) - 1)),
+            Expr::BvConst(val, width) => Value::BitVec((*val) & ((1 << *width) - 1)),
             _ => unimplemented!(),
         }
     }
@@ -58,7 +58,7 @@ impl Expr {
 pub enum Value {
     Bool(bool),
     Int(i64),
-    BitVec(u64),
+    BitVec(i64),
     String(String),
 
     #[default]
@@ -101,7 +101,7 @@ macro_rules! impl_unary_op {
                     $(
                         Value::$t(a) => Value::$t(a.$method()),
                     )+
-                    _ => panic!(concat!("Invalid operand for '", stringify!($method), "' operation")), // TODO: debug
+                    _ => panic!(concat!("Invalid operand for '", stringify!($method), "' operation")),
                 }
             }
         }
@@ -114,7 +114,7 @@ impl Value {
     fn neg(self) -> Value {
         match self {
             Value::Int(a) => Value::Int(-a),
-            Value::BitVec(a) => Value::BitVec(-(a as i64) as u64),
+            Value::BitVec(a) => Value::BitVec(-a),
             _ => panic!("Invalid operand for 'neg' operation"),
         }
     }

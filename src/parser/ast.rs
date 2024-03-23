@@ -57,7 +57,7 @@ pub enum Sort {
 pub enum Expr {
     ConstBool(bool),
     ConstInt(i64),
-    ConstBitVec(u64),
+    ConstBitVec(i64),
     ConstString(String),
     Var(Symbol, Sort),
     FuncApply(FuncName, Vec<Expr>),
@@ -171,7 +171,7 @@ pub enum GTerm {
 pub enum GExpr {
     ConstBool(bool),
     ConstInt(i64),
-    ConstBitVec(u64),
+    ConstBitVec(i64),
     ConstString(String),
     Var(Symbol, Sort),
     GFuncApply(ProdName, Vec<GExpr>),

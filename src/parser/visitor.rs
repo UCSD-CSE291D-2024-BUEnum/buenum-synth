@@ -496,7 +496,7 @@ impl Visitor for SyGuSVisitor {
                 Ok(Expr::ConstBool(val))
             }
             Rule::HexConst => {
-                let val = u64::from_str_radix(&id[2..], 16).unwrap();
+                let val = i64::from_str_radix(&id[2..], 16).unwrap();
                 Ok(Expr::ConstBitVec(val))
             }
             Rule::StringConst => Ok(Expr::ConstString(id)),
@@ -523,7 +523,7 @@ impl Visitor for SyGuSVisitor {
                             exprs.push(Expr::ConstBool(val));
                         }
                         Rule::HexConst => {
-                            let val = u64::from_str_radix(&id[2..], 16).unwrap();
+                            let val = i64::from_str_radix(&id[2..], 16).unwrap();
                             exprs.push(Expr::ConstBitVec(val));
                         }
                         Rule::StringConst => {
@@ -565,7 +565,7 @@ impl Visitor for SyGuSVisitor {
                 Ok(GExpr::ConstBool(val))
             }
             Rule::HexConst => {
-                let val = u64::from_str_radix(&id[2..], 16).unwrap();
+                let val = i64::from_str_radix(&id[2..], 16).unwrap();
                 Ok(GExpr::ConstBitVec(val))
             }
             Rule::StringConst => Ok(GExpr::ConstString(id)),
@@ -593,7 +593,7 @@ impl Visitor for SyGuSVisitor {
                             exprs.push(GExpr::ConstBool(val));
                         }
                         Rule::HexConst => {
-                            let val = u64::from_str_radix(&id[2..], 16).unwrap();
+                            let val = i64::from_str_radix(&id[2..], 16).unwrap();
                             exprs.push(GExpr::ConstBitVec(val));
                         }
                         Rule::StringConst => {

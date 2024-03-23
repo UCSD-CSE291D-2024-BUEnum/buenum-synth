@@ -600,7 +600,7 @@ impl Solver for BaselineSolver {
                         match sort {
                             Sort::Bool => Value::Bool(interp.as_bool().unwrap().as_bool().unwrap()),
                             Sort::Int => Value::Int(interp.as_int().unwrap().as_i64().unwrap()),
-                            Sort::BitVec(_) => Value::BitVec(interp.as_bv().unwrap().as_u64().unwrap()),
+                            Sort::BitVec(_) => Value::BitVec(interp.as_bv().unwrap().as_i64().unwrap()),
                             Sort::Compound(_, _) => unimplemented!("Not supporting compound solving"),
                             Sort::String => Value::String(interp.as_string().unwrap().as_string().unwrap()),
                             Sort::None => panic!("Unsupported sort"),
