@@ -205,7 +205,11 @@ impl<'a> Enumerator<'a> {
     //     self.merge_equivs();
     //     self.egraph.rebuild();
     // }
-
+    
+    fn exists_in_egraph(&self, expr: &RecExpr<ArithLanguage>) -> bool {
+        let id = self.egraph.lookup_expr(expr);
+        id.is_some()
+    }
     fn collect_equivs(&self) -> HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> {
         let mut equivs: HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> = HashMap::new();
         for eclass in self.egraph.classes() {
@@ -252,11 +256,14 @@ impl<'a> Enumerator<'a> {
                             },
                             _ => {}
                         }
-                        // println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
+                        // self.merge_equivs();
                         for (key, exprs) in new_expressions {
+                            // for expr in &exprs {
+                            //     self.egraph.add_expr(&expr);
+                            // }
+                            // let exprs = exprs.into_iter().filter(|expr| !self.exists_in_egraph(expr)).collect::<Vec<_>>();
                             self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
                         }
-                        // task::yield_now().await;
                     }
                 }
             }
@@ -272,10 +279,19 @@ impl<'a> Enumerator<'a> {
                                 let num_nonterminals = lang_construct.children().len();
                                 for left_size in 1..size {
                                     let right_size = size - left_size;
-                                    let left_exprs = self.cache.get(&(prod.lhs.clone(), left_size)).cloned().unwrap();
-                                    let right_exprs = self.cache.get(&(prod.lhs.clone(), right_size)).cloned().unwrap();
-                                    for left_expr in &left_exprs {
-                                        for right_expr in &right_exprs {
+                                    
+                                    let mut left_expr_parts = Vec::new();
+                                    let left_exprs = self.cache.get(&(prod.lhs.clone(), left_size)).cloned();
+                                    if let Some(exprs) = left_exprs {
+                                        left_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
+                                    }
+                                    let mut right_expr_parts = Vec::new();
+                                    let right_exprs = self.cache.get(&(prod.lhs.clone(), right_size)).cloned();
+                                    if let Some(exprs) = right_exprs {
+                                        right_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
+                                    }
+                                    for left_expr in &left_expr_parts {
+                                        for right_expr in &right_expr_parts {
                                             let left_id = self.egraph.add_expr(left_expr);
                                             let right_id = self.egraph.add_expr(right_expr);
                             
@@ -304,9 +320,9 @@ impl<'a> Enumerator<'a> {
                                 for part_size in 1..size {
                                     let mut expr_parts = Vec::new();
                                     if let Some(exprs) = self.cache.get(&(prod.lhs.clone(), part_size)) {
-                                        expr_parts.push(exprs.iter().cloned().collect::<Vec<_>>());
+                                        expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
                                     }
-                                    for expr in expr_parts.into_iter().flatten() {
+                                    for expr in expr_parts.into_iter() {
                                         let mut new_expr = expr.clone();
                                         let id = new_expr.add(lang_construct.clone()); // we don't care the id of a unary operator
                                         self.egraph.add_expr(&new_expr);
@@ -321,10 +337,12 @@ impl<'a> Enumerator<'a> {
                             _ => {}
                         }
                         // println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
+                        // self.merge_equivs();
                         for (key, exprs) in new_expressions {
                             // for expr in &exprs {
                             //     self.egraph.add_expr(&expr);
                             // }
+                            // let exprs = exprs.into_iter().filter(|expr| !self.exists_in_egraph(expr)).collect::<Vec<_>>();
                             self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
                         }
                         // task::yield_now().await;
