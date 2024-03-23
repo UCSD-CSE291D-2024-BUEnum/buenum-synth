@@ -1,5 +1,6 @@
-use super::ast::*;
 use std::ops::*;
+
+use super::ast::*;
 
 impl Expr {
     pub fn eval(&self, env: &EvalEnv) -> Value {
@@ -27,6 +28,13 @@ impl Expr {
             Expr::Xor(left, right) => left.eval(env).xor(right.eval(env)),
             Expr::Iff(left, right) => left.eval(env).iff(right.eval(env)),
             Expr::Equal(left, right) => Value::Bool(left.eval(env) == right.eval(env)),
+            Expr::Ite(cond, t, e) => {
+                if cond.eval(env) == Value::Bool(true) {
+                    t.eval(env)
+                } else {
+                    e.eval(env)
+                }
+            }
             Expr::BvAnd(left, right) => left.eval(env).bitand(right.eval(env)),
             Expr::BvOr(left, right) => left.eval(env).bitor(right.eval(env)),
             Expr::BvXor(left, right) => left.eval(env).bitxor(right.eval(env)),
@@ -40,7 +48,7 @@ impl Expr {
             Expr::BvLshr(left, right) => left.eval(env).shr(right.eval(env)),
             Expr::BvNeg(expr) => expr.eval(env).neg(),
             Expr::BvUlt(left, right) => left.eval(env).ult(right.eval(env)),
-            Expr::BvConst(val, width) => Value::BitVec((*val as u64) & ((1 << *width) - 1)),
+            Expr::BvConst(val, width) => Value::BitVec((*val) & ((1 << *width) - 1)),
             _ => unimplemented!(),
         }
     }
@@ -50,7 +58,7 @@ impl Expr {
 pub enum Value {
     Bool(bool),
     Int(i64),
-    BitVec(u64),
+    BitVec(i64),
     String(String),
 
     #[default]
@@ -106,7 +114,7 @@ impl Value {
     fn neg(self) -> Value {
         match self {
             Value::Int(a) => Value::Int(-a),
-            Value::BitVec(a) => Value::BitVec(-(a as i64) as u64),
+            Value::BitVec(a) => Value::BitVec(-a),
             _ => panic!("Invalid operand for 'neg' operation"),
         }
     }
@@ -160,8 +168,8 @@ impl Value {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct EvalEnv {
-    vars: Vec<(String, Value)>,
-    funcs: Vec<(FuncName, FuncBody)>,
+    pub vars: Vec<(String, Value)>,
+    pub funcs: Vec<(FuncName, FuncBody)>,
 }
 
 impl EvalEnv {

@@ -1,48 +1,59 @@
 pub mod baseline_solver;
 pub mod egg_solver;
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-
 use crate::parser::ast;
+use crate::parser::ast::ProdName;
+
+use std::collections::HashMap;
+use std::fmt::Debug;
 
 pub trait Solver {
     type Prog: ProgTrait;
     type Expr;
     type Grammar: GrammarTrait;
     type Constraint;
-    type CounterExample;
+    type CounterExample: Clone + Debug;
     const MAX_SIZE: usize = 10;
 
     fn enumerate<'a>(
         &'a self,
         g: &'a Self::Grammar,
-        c: &'a [Self::CounterExample]
+        c: &'a Vec<Self::CounterExample>,
     ) -> Box<dyn Iterator<Item = Self::Expr> + 'a>;
 
-    fn extract_grammar(&self, p: &Self::Prog, func_name: &str) -> Self::Grammar;
+    fn extract_grammar<'a>(&'a self, p: &'a Self::Prog, func_name: &str) -> &Self::Grammar;
 
     fn extract_constraint(&self, p: &Self::Prog) -> Self::Constraint;
 
-    fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Result<(), Self::CounterExample>;
+    fn verify(&self, p: &Self::Prog, func_name: &str, expr: &Self::Expr) -> Option<Self::CounterExample>;
+
+    fn expr_to_smt<'ctx>(
+        &self,
+        expr: &Self::Expr,
+        vars: &'ctx HashMap<String, z3::ast::Dynamic>,
+        funcs: &'ctx HashMap<String, z3::RecFuncDecl>,
+        ctx: &'ctx z3::Context,
+    ) -> Box<z3::ast::Dynamic<'ctx>>;
+
+    fn sort_to_z3_sort<'ctx>(&self, sort: &self::ast::Sort, ctx: &'ctx z3::Context) -> z3::Sort<'ctx>;
 
     fn synthesize(&self, p: &Self::Prog, func_name: &str) -> Option<Self::Expr> {
-        let counterexamples: RefCell<Vec<Self::CounterExample>> = RefCell::new(Vec::new()); // we need to use RefCell because we cannot decide the reference lifetime statically
+        let mut counterexamples: Vec<Self::CounterExample> = Vec::new();
         let constraint = self.extract_constraint(p);
         let g = self.extract_grammar(p, func_name);
 
         loop {
-            let pts = counterexamples.borrow();
+            let pts = counterexamples.clone();
             let mut candidates = self.enumerate(&g, &pts);
-
-            while let Some(expr) = candidates.next() {
-                match self.verify(p, func_name, &expr) {
-                    Ok(()) => return Some(expr),
-                    Err(cex) => counterexamples.borrow_mut().push(cex)
+            match candidates.next() {
+                Some(expr) => match self.verify(p, func_name, &expr) {
+                    None => return Some(expr),
+                    Some(cex) => counterexamples.push(cex),
+                },
+                None => {
+                    println!("Run out of candidates (resource limited)");
+                    return None;
                 }
-            }
-            if counterexamples.borrow().is_empty() {
-                return None;
             }
         }
     }
@@ -71,67 +82,20 @@ impl ProgTrait for ast::SyGuSProg {
 
 pub trait GrammarTrait {
     fn non_terminals(&self) -> &[ast::Production];
+
+    fn lhs_names(&self) -> Vec<&ProdName>;
 }
 
 impl GrammarTrait for ast::GrammarDef {
     fn non_terminals(&self) -> &[ast::Production] {
         &self.non_terminals
     }
-}
 
-pub struct Enumerator<'a, S: Solver> {
-    solver: &'a S,
-    grammar: &'a S::Grammar,
-    constraints: &'a [S::Constraint],
-    cache: HashMap<(ast::ProdName, usize), Vec<ast::GExpr>>,
-    current_size: usize
-}
-
-impl<'a, S: Solver> Enumerator<'a, S> {
-    pub fn new(solver: &'a S, grammar: &'a S::Grammar, constraints: &'a [S::Constraint]) -> Self {
-        Enumerator {
-            solver,
-            grammar,
-            constraints,
-            cache: HashMap::new(),
-            current_size: 0
+    fn lhs_names(&self) -> Vec<&ProdName> {
+        let mut names = Vec::<&ProdName>::new();
+        for prod in self.non_terminals.iter() {
+            names.push(&prod.lhs);
         }
-    }
-
-    fn grow(&mut self, non_terminal: &ast::ProdName) {
-        let size = self.current_size;
-        if let Some(productions) = self.grammar.non_terminals().iter().find(|p| &p.lhs == non_terminal) {
-            let mut expressions = Vec::new();
-            for production in &productions.rhs {
-                // TODO: implement the logic to generate expressions based on the production rules
-            }
-            self.cache.insert((non_terminal.clone(), size), expressions);
-        }
-    }
-}
-impl<'a, S: Solver> Iterator for Enumerator<'a, S> {
-    type Item = ast::GExpr;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            for non_terminal in self.grammar.non_terminals().iter().map(|p| &p.lhs) {
-                if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                    if let Some(expr) = expressions.get(0) {
-                        return Some(expr.clone());
-                    }
-                } else {
-                    self.grow(non_terminal);
-                    if let Some(expressions) = self.cache.get(&(non_terminal.clone(), self.current_size)) {
-                        if let Some(expr) = expressions.get(0) {
-                            return Some(expr.clone());
-                        }
-                    }
-                }
-            }
-            self.current_size += 1;
-            if self.current_size > S::MAX_SIZE {
-                return None;
-            }
-        }
+        names
     }
 }

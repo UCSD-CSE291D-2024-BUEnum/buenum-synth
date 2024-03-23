@@ -11,10 +11,14 @@ anyhow = "1.0.79"
 cfg = "0.8.0"
 clap = "4.5.1"        # CLI Arguments: clap
 egg = "0.9.5"         # EGraph-Good
+env = "0.0.0"
 log4rs = "1.3.0"      # Log4j-like logging
 pest = "2.7.7"        # Parser Generator
 pest_derive = "2.7.7"
 strum = "0.26"        # Enum utils (to iter())
 strum_macros = "0.26"
 z3 = "0.12.0"         # SMT Solver
-z3-sys = "0.8.1"      # Note: using the raw z3-sys crate is highly discouraged
+z3-sys = "=0.8.1"
+#
+#[build-dependencies]
+#z3-sys = "=0.8.1"

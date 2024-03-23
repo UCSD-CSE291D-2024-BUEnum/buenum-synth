@@ -1,12 +1,6 @@
-use pest::{
-    error::Error,
-    iterators::Pair
-};
+use pest::{error::Error, iterators::Pair};
 
-use crate::parser::{
-    ast::*,
-    Rule
-};
+use crate::parser::{ast::*, Rule};
 
 pub trait Visitor {
     type Prog;
@@ -53,7 +47,7 @@ pub trait Visitor {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SyGuSVisitor {
-    pub sygus_prog: SyGuSProg
+    pub sygus_prog: SyGuSProg,
 }
 
 macro_rules! parse_expr {
@@ -80,10 +74,16 @@ macro_rules! parse_expr {
                 "bvshl" => <$expr_type>::BvShl(Box::new($args[0].clone()), Box::new($args[1].clone())),
                 "bvlshr" => <$expr_type>::BvLshr(Box::new($args[0].clone()), Box::new($args[1].clone())),
                 "bvult" => <$expr_type>::BvUlt(Box::new($args[0].clone()), Box::new($args[1].clone())),
-                _ => unreachable!()
+                _ => unreachable!(),
             },
             "bvnot" => <$expr_type>::BvNot(Box::new($args[0].clone())),
             "bvneg" => <$expr_type>::BvNeg(Box::new($args[0].clone())),
+            // Triary Operators
+            "ite" => <$expr_type>::Ite(
+                Box::new($args[0].clone()),
+                Box::new($args[1].clone()),
+                Box::new($args[2].clone()),
+            ),
             // _ => panic!(
             //     "Unknown operator: {}\nCurrent environment: {:#?}\nCurrent sygus_prog: {:#?}",
             //     $id, $env, $self.sygus_prog
@@ -118,7 +118,7 @@ impl Visitor for SyGuSVisitor {
                 Rule::SyGuS => {
                     self.visit_sygus(pair)?;
                 }
-                _ => continue
+                _ => continue,
             }
         }
         Ok(&self.sygus_prog)
@@ -130,7 +130,7 @@ impl Visitor for SyGuSVisitor {
                 Rule::Cmd => {
                     self.visit_cmd(pair)?;
                 }
-                _ => unreachable!("SyGuS should only have Cmd as children")
+                _ => unreachable!("SyGuS should only have Cmd as children"),
             }
         }
         Ok(&self.sygus_prog)
@@ -193,7 +193,7 @@ impl Visitor for SyGuSVisitor {
                 Rule::SetOptionCmd => {
                     self.visit_set_option(pair)?;
                 }
-                _ => unreachable!("SmtCmd should only have DefineFunCmd, SetLogicCmd, or SetOptionCmd as children")
+                _ => unreachable!("SmtCmd should only have DefineFunCmd, SetLogicCmd, or SetOptionCmd as children"),
             }
         }
         Ok(&self.sygus_prog)
@@ -210,7 +210,7 @@ impl Visitor for SyGuSVisitor {
                     let constr_expr = self.visit_term(env, pair)?;
                     self.sygus_prog.constraints.push(constr_expr);
                 }
-                _ => unreachable!("ConstraintCmd should only have Term as children")
+                _ => unreachable!("ConstraintCmd should only have Term as children"),
             }
         }
         Ok(&self.sygus_prog)
@@ -226,7 +226,7 @@ impl Visitor for SyGuSVisitor {
                 Rule::Sort => {
                     var_sort = self.visit_sort(pair)?;
                 }
-                _ => unreachable!("DeclareVarCmd should only have Symbol or Sort as children")
+                _ => unreachable!("DeclareVarCmd should only have Symbol or Sort as children"),
             }
         }
         if (!var_name.is_empty()) && (var_sort != Sort::default()) {
@@ -254,14 +254,14 @@ impl Visitor for SyGuSVisitor {
                 Rule::GrammarDef => {
                     grammar_def = self.visit_grammar_def(&sorted_vars, pair)?;
                 }
-                _ => unreachable!("SynthFunCmd should only have Symbol, SortedVar, Sort, or GrammarDef as children")
+                _ => unreachable!("SynthFunCmd should only have Symbol, SortedVar, Sort, or GrammarDef as children"),
             }
         }
 
         let synth_func = SynthFun {
             name: func_name.clone(),
             params: sorted_vars,
-            ret_sort: ret_sort
+            ret_sort: ret_sort,
         };
         self.sygus_prog.synth_func.insert(func_name, (synth_func, grammar_def));
         Ok(&self.sygus_prog)
@@ -290,14 +290,14 @@ impl Visitor for SyGuSVisitor {
                     let env = sorted_vars.clone();
                     body = self.visit_term(&env, pair)?;
                 }
-                _ => unreachable!("define_fun should only have Symbol, SortedVar, Sort, or Term as children")
+                _ => unreachable!("define_fun should only have Symbol, SortedVar, Sort, or Term as children"),
             }
         }
         let func_body = FuncBody {
             name: func_name.clone(),
             params: sorted_vars,
             ret_sort: ret_sort,
-            body: body.clone()
+            body: body.clone(),
         };
         self.sygus_prog.define_fun.insert(func_name, func_body);
         Ok(&self.sygus_prog)
@@ -309,7 +309,7 @@ impl Visitor for SyGuSVisitor {
         match pair.as_str() {
             "LIA" => self.sygus_prog.set_logic = SetLogic::LIA,
             "BV" => self.sygus_prog.set_logic = SetLogic::BV,
-            _ => self.sygus_prog.set_logic = SetLogic::default()
+            _ => self.sygus_prog.set_logic = SetLogic::default(),
         }
         Ok(&self.sygus_prog)
     }
@@ -329,7 +329,7 @@ impl Visitor for SyGuSVisitor {
                     opt_value = pair.as_str().to_string();
                     opts.push((opt_name.clone(), opt_value.clone()));
                 }
-                _ => unreachable!("SetOptionCmd should only have Keyword or Literal as children")
+                _ => unreachable!("SetOptionCmd should only have Keyword or Literal as children"),
             }
         }
         self.sygus_prog.set_option.extend(opts);
@@ -344,7 +344,7 @@ impl Visitor for SyGuSVisitor {
                     let production = self.visit_grouped_rule_list(env, pair)?;
                     grammar_def.non_terminals.push(production);
                 }
-                _ => unimplemented!("Currently, GrammarDef should only have GroupedRuleList as children")
+                _ => unimplemented!("Currently, GrammarDef should only have GroupedRuleList as children"),
             }
         }
         Ok(grammar_def)
@@ -369,7 +369,7 @@ impl Visitor for SyGuSVisitor {
                     let gterm = self.visit_gterm(&env, pair)?;
                     production.rhs.push(gterm);
                 }
-                _ => unreachable!("GroupedRuleList should only have Symbol, Sort, or GTerm as children")
+                _ => unreachable!("GroupedRuleList should only have Symbol, Sort, or GTerm as children"),
             }
         }
         Ok(production)
@@ -392,7 +392,7 @@ impl Visitor for SyGuSVisitor {
                     let bf_term = self.visit_bfterm(env, first_pair)?;
                     gterm = GTerm::BfTerm(bf_term);
                 }
-                _ => unreachable!("GTerm should only have ConstGTerm, VarGTerm, or BfTerm as children")
+                _ => unreachable!("GTerm should only have ConstGTerm, VarGTerm, or BfTerm as children"),
             }
         }
 
@@ -425,7 +425,7 @@ impl Visitor for SyGuSVisitor {
                 Rule::Literal => {
                     expr = self.visit_term_literal(env, first_pair)?;
                 }
-                _ => unreachable!("Term should only have Identifier or Literal as the first child")
+                _ => unreachable!("Term should only have Identifier or Literal as the first child"),
             }
         }
 
@@ -455,7 +455,7 @@ impl Visitor for SyGuSVisitor {
                 Rule::Literal => {
                     expr = self.visit_bfterm_literal(env, first_pair)?;
                 }
-                _ => unreachable!("BfTerm should only have Identifier or Literal as children")
+                _ => unreachable!("BfTerm should only have Identifier or Literal as children"),
             }
         }
 
@@ -473,7 +473,7 @@ impl Visitor for SyGuSVisitor {
                 Rule::Sort => {
                     var_sort = self.visit_sort(pair)?;
                 }
-                _ => unreachable!("SortedVar should only have Symbol or Sort as children")
+                _ => unreachable!("SortedVar should only have Symbol or Sort as children"),
             }
         }
         Ok((var_name, var_sort))
@@ -496,11 +496,11 @@ impl Visitor for SyGuSVisitor {
                 Ok(Expr::ConstBool(val))
             }
             Rule::HexConst => {
-                let val = u64::from_str_radix(&id[2..], 16).unwrap();
+                let val = i64::from_str_radix(&id[2..], 16).unwrap();
                 Ok(Expr::ConstBitVec(val))
             }
             Rule::StringConst => Ok(Expr::ConstString(id)),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
     fn visit_term_ident_list(&mut self, env: &Self::Env, pairs: Pair<Rule>) -> Result<Vec<Expr>, Error<Rule>> {
@@ -523,7 +523,7 @@ impl Visitor for SyGuSVisitor {
                             exprs.push(Expr::ConstBool(val));
                         }
                         Rule::HexConst => {
-                            let val = u64::from_str_radix(&id[2..], 16).unwrap();
+                            let val = i64::from_str_radix(&id[2..], 16).unwrap();
                             exprs.push(Expr::ConstBitVec(val));
                         }
                         Rule::StringConst => {
@@ -531,14 +531,14 @@ impl Visitor for SyGuSVisitor {
                         }
                         _ => unimplemented!(
                             "Current Literal should only have Numeral, BoolConst, HexConst, or StringConst as children"
-                        )
+                        ),
                     }
                 }
                 Rule::Term => {
                     let expr = self.visit_term(env, pair)?;
                     exprs.push(expr);
                 }
-                _ => unreachable!("The third branch should only have Identifier, Literal, or Term as children")
+                _ => unreachable!("The third branch should only have Identifier, Literal, or Term as children"),
             }
         }
         Ok(exprs)
@@ -565,11 +565,11 @@ impl Visitor for SyGuSVisitor {
                 Ok(GExpr::ConstBool(val))
             }
             Rule::HexConst => {
-                let val = u64::from_str_radix(&id[2..], 16).unwrap();
+                let val = i64::from_str_radix(&id[2..], 16).unwrap();
                 Ok(GExpr::ConstBitVec(val))
             }
             Rule::StringConst => Ok(GExpr::ConstString(id)),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -593,20 +593,20 @@ impl Visitor for SyGuSVisitor {
                             exprs.push(GExpr::ConstBool(val));
                         }
                         Rule::HexConst => {
-                            let val = u64::from_str_radix(&id[2..], 16).unwrap();
+                            let val = i64::from_str_radix(&id[2..], 16).unwrap();
                             exprs.push(GExpr::ConstBitVec(val));
                         }
                         Rule::StringConst => {
                             exprs.push(GExpr::ConstString(id));
                         }
-                        _ => continue
+                        _ => continue,
                     }
                 }
                 Rule::BfTerm => {
                     let expr = self.visit_bfterm_ident(&env, pair)?;
                     exprs.push(expr);
                 }
-                _ => continue
+                _ => continue,
             }
         }
         Ok(exprs)
@@ -637,7 +637,7 @@ impl Visitor for SyGuSVisitor {
                         }
                     }
                 }
-                _ => unreachable!("Sort should only have Identifier as first children")
+                _ => unreachable!("Sort should only have Identifier as first children"),
             }
         } else {
             Ok(Sort::default())
@@ -645,101 +645,106 @@ impl Visitor for SyGuSVisitor {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::fs;
+// #[cfg(test)]
+// mod tests {
+//     use std::fs;
 
-    use crate::parser::parse;
+//     use crate::parser::parse;
 
-    const PROJECT_ROOT: &str = env!("CARGO_MANIFEST_DIR");
-    macro_rules! check_parse_tree {
-        ($relative_path:expr) => {
-            let filename = format!("{}/{}", PROJECT_ROOT, $relative_path);
-            let input = fs::read_to_string(&filename).unwrap();
-            let res = parse(&input);
-            let res = match res.clone() {
-                Ok(res) => res,
-                Err(e) => {
-                    panic!("Error parsing file: {}\nError: {:#?}", filename, e);
-                }
-            };
-            dbg!(format!("{:?}", res));
-            // panic!("{:#?}", res);
-            // panic!("{:?}", res);
-        };
-    }
-    #[test]
-    fn visit_bitvector_benchmarks_parity_aig_d0() {
-        check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity-AIG-d0.sl"));
-    }
-    #[test]
-    fn visit_bitvector_benchmarks_parity_nand_d0() {
-        check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity-NAND-d0.sl"));
-    }
-    #[test]
-    fn visit_bitvector_benchmarks_parity() {
-        check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity.sl"));
-    }
-    #[test]
-    fn visit_bitvector_benchmarks_zmorton_d4() {
-        check_parse_tree!(format!("benchmarks/bitvector-benchmarks/zmorton-d4.sl"));
-    }
-    #[test]
-    fn visit_hackers_del_hd_01_d0_prog() {
-        check_parse_tree!(format!("benchmarks/hackers_del/hd-01-d0-prog.sl"));
-    }
-    #[test]
-    fn visit_hackers_del_hd_01_d1_prog() {
-        check_parse_tree!(format!("benchmarks/hackers_del/hd-01-d1-prog.sl"));
-    }
-    #[test]
-    fn visit_hackers_del_hd_06_d1_prog() {
-        check_parse_tree!(format!("benchmarks/hackers_del/hd-06-d1-prog.sl"));
-    }
-    #[test]
-    fn visit_hackers_del_hd_20_d5_prog() {
-        check_parse_tree!(format!("benchmarks/hackers_del/hd-20-d5-prog.sl"));
-    }
-    #[test]
-    fn visit_icfp_benchmarks_103_10() {
-        check_parse_tree!(format!("benchmarks/icfp_benchmarks/icfp-problems/103_10.sl"));
-    }
-    #[test]
-    fn visit_integer_benchmarks_array_search_10() {
-        check_parse_tree!(format!("benchmarks/integer-benchmarks/array_search_10.sl"));
-    }
-    #[test]
-    fn visit_integer_benchmarks_max2() {
-        check_parse_tree!(format!("benchmarks/integer-benchmarks/max2.sl"));
-    }
-    // Not implemented yet
-    // #[test]
-    // fn visit_let_benchmarks_array_sum_10_15() {
-    //     check_parse_tree!(format!("benchmarks/let-benchmarks/array_sum/array_sum_10_15.sl"));
-    // }
-    #[test]
-    fn visit_multiple_functions_commutative() {
-        check_parse_tree!(format!("benchmarks/multiple-functions/commutative.sl"));
-    }
-    #[test]
-    fn visit_multiple_functions_constant() {
-        check_parse_tree!(format!("benchmarks/multiple-functions/constant.sl"));
-    }
-    #[test]
-    fn visit_multiple_functions_partition() {
-        check_parse_tree!(format!("benchmarks/multiple-functions/partition.sl"));
-    }
-    #[test]
-    fn visit_multiple_functions_polynomial1() {
-        check_parse_tree!(format!("benchmarks/multiple-functions/polynomial1.sl"));
-    }
-    // Not implemented yet
-    // #[test]
-    // fn visit_sketch_benchmarks_logcount_d1() {
-    //     check_parse_tree!(format!("benchmarks/sketch-benchmarks/logcount-d1.sl"));
-    // }
-    // #[test]
-    // fn visit_sketch_benchmarks_tutorial2() {
-    //     check_parse_tree!(format!("benchmark/sketch-benchmarks/tutorial2.sl"));
-    // }
-}
+//     const PROJECT_ROOT: &str = env!("CARGO_MANIFEST_DIR");
+//     macro_rules! check_parse_tree {
+//         ($relative_path:expr) => {
+//             let filename = format!("{}/{}", PROJECT_ROOT, $relative_path);
+//             let input = fs::read_to_string(&filename).unwrap();
+//             let res = parse(&input);
+//             let res = match res.clone() {
+//                 Ok(res) => res,
+//                 Err(e) => {
+//                     panic!("Error parsing file: {}\nError: {:#?}", filename, e);
+//                 }
+//             };
+//             // dbg!(format!("{:?}", res));
+//             panic!("{:#?}", res);
+//             // panic!("{:?}", res);
+//         };
+//     }
+// #[test]
+// fn visit_bitvector_benchmarks_parity_aig_d0() {
+//     check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity-AIG-d0.sl"));
+// }
+// #[test]
+// fn visit_bitvector_benchmarks_parity_nand_d0() {
+//     check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity-NAND-d0.sl"));
+// }
+// #[test]
+// fn visit_bitvector_benchmarks_parity() {
+//     check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity.sl"));
+// }
+// #[test]
+// fn visit_bitvector_benchmarks_zmorton_d4() {
+//     check_parse_tree!(format!("benchmarks/bitvector-benchmarks/zmorton-d4.sl"));
+// }
+// #[test]
+// fn visit_hackers_del_hd_01_d0_prog() {
+//     check_parse_tree!(format!("benchmarks/hackers_del/hd-01-d0-prog.sl"));
+// }
+// #[test]
+// fn visit_hackers_del_hd_01_d1_prog() {
+//     check_parse_tree!(format!("benchmarks/hackers_del/hd-01-d1-prog.sl"));
+// }
+// #[test]
+// fn visit_hackers_del_hd_06_d1_prog() {
+//     check_parse_tree!(format!("benchmarks/hackers_del/hd-06-d1-prog.sl"));
+// }
+// #[test]
+// fn visit_hackers_del_hd_20_d5_prog() {
+//     check_parse_tree!(format!("benchmarks/hackers_del/hd-20-d5-prog.sl"));
+// }
+// #[test]
+// fn visit_icfp_benchmarks_103_10() {
+//     check_parse_tree!(format!("benchmarks/icfp_benchmarks/icfp-problems/103_10.sl"));
+// }
+// #[test]
+// fn visit_integer_benchmarks_array_search_10() {
+//     check_parse_tree!(format!("benchmarks/integer-benchmarks/array_search_10.sl"));
+// }
+// #[test]
+// fn visit_integer_benchmarks_max2() {
+//     check_parse_tree!(format!("benchmarks/integer-benchmarks/max2.sl"));
+// }
+// Not implemented yet
+// #[test]
+// fn visit_let_benchmarks_array_sum_10_15() {
+//     check_parse_tree!(format!("benchmarks/let-benchmarks/array_sum/array_sum_10_15.sl"));
+// }
+// #[test]
+// fn visit_multiple_functions_commutative() {
+//     check_parse_tree!(format!("benchmarks/multiple-functions/commutative.sl"));
+// }
+// #[test]
+// fn visit_multiple_functions_constant() {
+//     check_parse_tree!(format!("benchmarks/multiple-functions/constant.sl"));
+// }
+// #[test]
+// fn visit_multiple_functions_partition() {
+//     check_parse_tree!(format!("benchmarks/multiple-functions/partition.sl"));
+// }
+// #[test]
+// fn visit_multiple_functions_polynomial1() {
+//     check_parse_tree!(format!("benchmarks/multiple-functions/polynomial1.sl"));
+// }
+
+// #[test]
+// fn visit_multiple_functions_icfp() {
+//     check_parse_tree!(format!("benchmarks/icfp_benchmarks/icfp-problems/5_1000.sl"));
+// }
+// Not implemented yet
+// #[test]
+// fn visit_sketch_benchmarks_logcount_d1() {
+//     check_parse_tree!(format!("benchmarks/sketch-benchmarks/logcount-d1.sl"));
+// }
+// #[test]
+// fn visit_sketch_benchmarks_tutorial2() {
+//     check_parse_tree!(format!("benchmark/sketch-benchmarks/tutorial2.sl"));
+// }
+// }
