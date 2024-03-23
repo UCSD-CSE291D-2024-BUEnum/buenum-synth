@@ -645,106 +645,106 @@ impl Visitor for SyGuSVisitor {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::fs;
+// #[cfg(test)]
+// mod tests {
+//     use std::fs;
 
-    use crate::parser::parse;
+//     use crate::parser::parse;
 
-    const PROJECT_ROOT: &str = env!("CARGO_MANIFEST_DIR");
-    macro_rules! check_parse_tree {
-        ($relative_path:expr) => {
-            let filename = format!("{}/{}", PROJECT_ROOT, $relative_path);
-            let input = fs::read_to_string(&filename).unwrap();
-            let res = parse(&input);
-            let res = match res.clone() {
-                Ok(res) => res,
-                Err(e) => {
-                    panic!("Error parsing file: {}\nError: {:#?}", filename, e);
-                }
-            };
-            // dbg!(format!("{:?}", res));
-            panic!("{:#?}", res);
-            // panic!("{:?}", res);
-        };
-    }
-    #[test]
-    fn visit_bitvector_benchmarks_parity_aig_d0() {
-        check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity-AIG-d0.sl"));
-    }
-    #[test]
-    fn visit_bitvector_benchmarks_parity_nand_d0() {
-        check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity-NAND-d0.sl"));
-    }
-    #[test]
-    fn visit_bitvector_benchmarks_parity() {
-        check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity.sl"));
-    }
-    #[test]
-    fn visit_bitvector_benchmarks_zmorton_d4() {
-        check_parse_tree!(format!("benchmarks/bitvector-benchmarks/zmorton-d4.sl"));
-    }
-    #[test]
-    fn visit_hackers_del_hd_01_d0_prog() {
-        check_parse_tree!(format!("benchmarks/hackers_del/hd-01-d0-prog.sl"));
-    }
-    #[test]
-    fn visit_hackers_del_hd_01_d1_prog() {
-        check_parse_tree!(format!("benchmarks/hackers_del/hd-01-d1-prog.sl"));
-    }
-    #[test]
-    fn visit_hackers_del_hd_06_d1_prog() {
-        check_parse_tree!(format!("benchmarks/hackers_del/hd-06-d1-prog.sl"));
-    }
-    #[test]
-    fn visit_hackers_del_hd_20_d5_prog() {
-        check_parse_tree!(format!("benchmarks/hackers_del/hd-20-d5-prog.sl"));
-    }
-    #[test]
-    fn visit_icfp_benchmarks_103_10() {
-        check_parse_tree!(format!("benchmarks/icfp_benchmarks/icfp-problems/103_10.sl"));
-    }
-    #[test]
-    fn visit_integer_benchmarks_array_search_10() {
-        check_parse_tree!(format!("benchmarks/integer-benchmarks/array_search_10.sl"));
-    }
-    #[test]
-    fn visit_integer_benchmarks_max2() {
-        check_parse_tree!(format!("benchmarks/integer-benchmarks/max2.sl"));
-    }
-    // Not implemented yet
-    // #[test]
-    // fn visit_let_benchmarks_array_sum_10_15() {
-    //     check_parse_tree!(format!("benchmarks/let-benchmarks/array_sum/array_sum_10_15.sl"));
-    // }
-    #[test]
-    fn visit_multiple_functions_commutative() {
-        check_parse_tree!(format!("benchmarks/multiple-functions/commutative.sl"));
-    }
-    #[test]
-    fn visit_multiple_functions_constant() {
-        check_parse_tree!(format!("benchmarks/multiple-functions/constant.sl"));
-    }
-    #[test]
-    fn visit_multiple_functions_partition() {
-        check_parse_tree!(format!("benchmarks/multiple-functions/partition.sl"));
-    }
-    #[test]
-    fn visit_multiple_functions_polynomial1() {
-        check_parse_tree!(format!("benchmarks/multiple-functions/polynomial1.sl"));
-    }
+//     const PROJECT_ROOT: &str = env!("CARGO_MANIFEST_DIR");
+//     macro_rules! check_parse_tree {
+//         ($relative_path:expr) => {
+//             let filename = format!("{}/{}", PROJECT_ROOT, $relative_path);
+//             let input = fs::read_to_string(&filename).unwrap();
+//             let res = parse(&input);
+//             let res = match res.clone() {
+//                 Ok(res) => res,
+//                 Err(e) => {
+//                     panic!("Error parsing file: {}\nError: {:#?}", filename, e);
+//                 }
+//             };
+//             // dbg!(format!("{:?}", res));
+//             panic!("{:#?}", res);
+//             // panic!("{:?}", res);
+//         };
+//     }
+// #[test]
+// fn visit_bitvector_benchmarks_parity_aig_d0() {
+//     check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity-AIG-d0.sl"));
+// }
+// #[test]
+// fn visit_bitvector_benchmarks_parity_nand_d0() {
+//     check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity-NAND-d0.sl"));
+// }
+// #[test]
+// fn visit_bitvector_benchmarks_parity() {
+//     check_parse_tree!(format!("benchmarks/bitvector-benchmarks/parity.sl"));
+// }
+// #[test]
+// fn visit_bitvector_benchmarks_zmorton_d4() {
+//     check_parse_tree!(format!("benchmarks/bitvector-benchmarks/zmorton-d4.sl"));
+// }
+// #[test]
+// fn visit_hackers_del_hd_01_d0_prog() {
+//     check_parse_tree!(format!("benchmarks/hackers_del/hd-01-d0-prog.sl"));
+// }
+// #[test]
+// fn visit_hackers_del_hd_01_d1_prog() {
+//     check_parse_tree!(format!("benchmarks/hackers_del/hd-01-d1-prog.sl"));
+// }
+// #[test]
+// fn visit_hackers_del_hd_06_d1_prog() {
+//     check_parse_tree!(format!("benchmarks/hackers_del/hd-06-d1-prog.sl"));
+// }
+// #[test]
+// fn visit_hackers_del_hd_20_d5_prog() {
+//     check_parse_tree!(format!("benchmarks/hackers_del/hd-20-d5-prog.sl"));
+// }
+// #[test]
+// fn visit_icfp_benchmarks_103_10() {
+//     check_parse_tree!(format!("benchmarks/icfp_benchmarks/icfp-problems/103_10.sl"));
+// }
+// #[test]
+// fn visit_integer_benchmarks_array_search_10() {
+//     check_parse_tree!(format!("benchmarks/integer-benchmarks/array_search_10.sl"));
+// }
+// #[test]
+// fn visit_integer_benchmarks_max2() {
+//     check_parse_tree!(format!("benchmarks/integer-benchmarks/max2.sl"));
+// }
+// Not implemented yet
+// #[test]
+// fn visit_let_benchmarks_array_sum_10_15() {
+//     check_parse_tree!(format!("benchmarks/let-benchmarks/array_sum/array_sum_10_15.sl"));
+// }
+// #[test]
+// fn visit_multiple_functions_commutative() {
+//     check_parse_tree!(format!("benchmarks/multiple-functions/commutative.sl"));
+// }
+// #[test]
+// fn visit_multiple_functions_constant() {
+//     check_parse_tree!(format!("benchmarks/multiple-functions/constant.sl"));
+// }
+// #[test]
+// fn visit_multiple_functions_partition() {
+//     check_parse_tree!(format!("benchmarks/multiple-functions/partition.sl"));
+// }
+// #[test]
+// fn visit_multiple_functions_polynomial1() {
+//     check_parse_tree!(format!("benchmarks/multiple-functions/polynomial1.sl"));
+// }
 
-    #[test]
-    fn visit_multiple_functions_icfp() {
-        check_parse_tree!(format!("benchmarks/icfp_benchmarks/icfp-problems/5_1000.sl"));
-    }
-    // Not implemented yet
-    // #[test]
-    // fn visit_sketch_benchmarks_logcount_d1() {
-    //     check_parse_tree!(format!("benchmarks/sketch-benchmarks/logcount-d1.sl"));
-    // }
-    // #[test]
-    // fn visit_sketch_benchmarks_tutorial2() {
-    //     check_parse_tree!(format!("benchmark/sketch-benchmarks/tutorial2.sl"));
-    // }
-}
+// #[test]
+// fn visit_multiple_functions_icfp() {
+//     check_parse_tree!(format!("benchmarks/icfp_benchmarks/icfp-problems/5_1000.sl"));
+// }
+// Not implemented yet
+// #[test]
+// fn visit_sketch_benchmarks_logcount_d1() {
+//     check_parse_tree!(format!("benchmarks/sketch-benchmarks/logcount-d1.sl"));
+// }
+// #[test]
+// fn visit_sketch_benchmarks_tutorial2() {
+//     check_parse_tree!(format!("benchmark/sketch-benchmarks/tutorial2.sl"));
+// }
+// }

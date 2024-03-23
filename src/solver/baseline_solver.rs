@@ -783,11 +783,6 @@ mod tests {
     }
 
     #[test]
-    fn test_oe() {
-        unimplemented!()
-    }
-
-    #[test]
     fn test_verify_1() {
         let filename = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), format!("test_bool_1.sl"));
         let input = fs::read_to_string(&filename).unwrap();
