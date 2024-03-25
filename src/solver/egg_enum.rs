@@ -62,6 +62,11 @@ struct ObsEquiv {
     pts: IOPairs,
 }
 
+// TODO:
+// 1. IOPairs -> IOPair
+// 2. Implement methods for IOPair
+//    (1) fn eval(&self, egraph: &EGraph<ArithLanguage, ObsEquiv>, expr: &RecExpr<ArithLanguage>) -> i64
+// 3. Remove cache for storing all expressions, only store equivs, when the egraph eclasses split, new exprs will be added to the cache
 impl Analysis<ArithLanguage> for ObsEquiv {
     type Data = IOPairs;
 
@@ -125,6 +130,9 @@ impl Analysis<ArithLanguage> for ObsEquiv {
     }
 }
 
+// TODO: Can we use e-matching to obtain certain size of expressions?
+// I think we can use AstSize somewhere.
+// Can we connect data with certain e-node, rather than e-class? In this way, we can keep track of expr size.
 struct Enumerator<'a> {
     old_egraphs: Vec<EGraph<ArithLanguage, ObsEquiv>>,
     grammar: &'a Grammar,
@@ -147,6 +155,8 @@ impl<'a> Enumerator<'a> {
     }
 
     fn rebuild(&mut self, pts: &IOPairs) {
+        // TODO: construct another egraph using all the possible expr in one egraph? (Non-incremental)
+        // TODO: split eclasses by certain standard, enodes eval to the same value will be in the new same eclass, one is retained as orignal, the other are newly created.
         let mut new_egraph = EGraph::new(ObsEquiv { pts: pts.clone() }).with_explanations_enabled();
         for (key, exprs) in &self.cache {
             for expr in exprs {
@@ -211,6 +221,9 @@ impl<'a> Enumerator<'a> {
         let id = self.egraph.lookup_expr(expr);
         id.is_some()
     }
+    fn exists_in_cache(&self, key: &(ProdName, usize)) -> bool {
+        self.cache.contains_key(key)
+    }
     fn collect_equivs(&self) -> HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> {
         let mut equivs: HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> = HashMap::new();
         for eclass in self.egraph.classes() {
@@ -258,11 +271,12 @@ impl<'a> Enumerator<'a> {
                             _ => {}
                         }
                         // self.merge_equivs();
+                        // self.egraph.rebuild();
                         for (key, exprs) in new_expressions {
                             // for expr in &exprs {
                             //     self.egraph.add_expr(&expr);
                             // }
-                            // let exprs = exprs.into_iter().filter(|expr| !self.exists_in_egraph(expr)).collect::<Vec<_>>();
+                            // let exprs = exprs.into_iter().filter(|expr| !self.exists_in_egraph(expr) || !self.exists_in_cache(&key)).collect::<Vec<_>>();
                             self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
                         }
                     }
@@ -339,11 +353,12 @@ impl<'a> Enumerator<'a> {
                         }
                         // println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
                         // self.merge_equivs();
+                        // self.egraph.rebuild();
                         for (key, exprs) in new_expressions {
                             // for expr in &exprs {
                             //     self.egraph.add_expr(&expr);
                             // }
-                            // let exprs = exprs.into_iter().filter(|expr| !self.exists_in_egraph(expr)).collect::<Vec<_>>();
+                            // let exprs = exprs.into_iter().filter(|expr| !self.exists_in_egraph(expr) || !self.exists_in_cache(&key)).collect::<Vec<_>>();
                             self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
                         }
                         // task::yield_now().await;
@@ -374,11 +389,16 @@ impl<'a> Enumerator<'a> {
             self.rebuild(pts);
             // println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}", self.egraph.analysis.pts);
         }
-        let mut result = vec![];
+        let mut result: Vec<RecExpr<ArithLanguage>> = vec![];
         while self.current_size <= size {
             if self.current_size < size {
                 println!("<Enumerator::enumerate> Growing to size: {}", self.current_size + 1);
                 self.grow()/*.await*/;
+                println!("<Enumerator::enumerate> Finished growing to size: {}", self.current_size);
+                println!("<Enumerator::enumerate> Cache size: {}", self.cache.values().flatten().count());
+                println!("<Enumerator::enumerate> EGraph size: {}", self.egraph.total_size());
+                println!("<Enumerator::enumerate> EGraph nodes: {}", self.egraph.total_number_of_nodes());
+                println!("<Enumerator::enumerate> EGraph classes: {}", self.egraph.number_of_classes());
             }
             let start_nonterminal = &self.grammar.productions.first().unwrap().lhs;
             let cache_max_size = self.cache.iter().map(|(k, _)| k.1).max().unwrap();
@@ -386,7 +406,7 @@ impl<'a> Enumerator<'a> {
             result.clear();
             for expr in exprs {
                 if self.satisfies_pts(expr, pts) {
-                    // println!("<Enumerator::enumerate> expr: {:?} satisfies pts: {:?}", expr.pretty(100), pts);
+                    println!("<Enumerator::enumerate> expr: {:?} satisfies pts: {:?}", expr.pretty(100), pts);
                     result.push(expr.clone());
                 }
             }
@@ -442,7 +462,7 @@ impl EggSolver {
         let mut pts = vec![];
         let start = std::time::Instant::now();
         // println!("<EggSolver::synthesize> Start time: {:?}", start);
-        while enumerator.current_size < max_size && start.elapsed().as_secs() <= 120 {
+        while enumerator.current_size < max_size {
             let exprs = enumerator.enumerate(max_size, &pts)/*.await */;
             let exprs_sat = exprs.iter().filter(|expr| self.verify(expr, pts_all).is_none()).collect::<Vec<_>>();
             // let cexs: Option<_> = exprs.iter().map(|expr| self.verify(expr, pts_all)).fold(None, |acc, cex| acc.or(cex));
@@ -450,8 +470,8 @@ impl EggSolver {
             if !exprs_sat.is_empty() {
                 // target found
                 // println!("Target found!");
-                println!("{}", pretty_cache(&enumerator.cache, 2));
-                // println!("{}", pretty_egraph(&enumerator.egraph, 2));
+                // println!("{}", pretty_cache(&enumerator.cache, 2));
+                println!("{}", pretty_egraph(&enumerator.egraph, 2));
                 // println!("Time elapsed: {:?}", start.elapsed());
                 return exprs_sat.iter().cloned().map(|expr| expr.clone()).collect();
             } else if !exprs.is_empty() {
@@ -489,6 +509,51 @@ impl EggSolver {
         }
         None
     }
+}
+
+fn pretty_cache(cache: &HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>, starting_space: usize)  -> String {
+    let mut result = String::new();
+    result.push_str("Cache:\n");
+    for (key, exprs) in cache {
+        for expr in exprs {
+            // println!("[{}, {}]: {}", &key.0, &key.1, expr.pretty(100));
+            // println!("{}[{}, {}]: {}", " ".repeat(starting_space), &key.0, &key.1, expr.pretty(100));
+            result.push_str(&format!("{}[{}, {}]: {}\n", " ".repeat(starting_space), &key.0, &key.1, expr.pretty(100)));
+        }
+    }
+    result.trim().to_string()
+}
+
+fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize) -> String {
+    let mut result = String::new();
+    result.push_str("EGraph:\n");
+    for eclass in egraph.classes() {
+        let expr = egraph.id_to_expr(eclass.id);
+        result.push_str(&format!("{}{}:[{}] {:?}\n", " ".repeat(starting_space), eclass.id, expr.pretty(100), egraph[eclass.id].data.iter().map(| (inputs, output) | output).collect::<Vec<_>>()));
+        result.push_str(&format!("{}nodes:\n", " ".repeat(starting_space * 2)));
+        for node in &eclass.nodes {
+            result.push_str(&format!("{}{:?}\n", " ".repeat(starting_space * 2), node));
+        }
+        // expr ids
+        result.push_str(&format!("{}exprs:\n", " ".repeat(starting_space * 2)));
+        let ids = egraph.lookup_expr_ids(&expr).unwrap_or_default();
+        for expr_id in ids {
+            result.push_str(&format!("{}{}\n", " ".repeat(starting_space * 2), egraph.id_to_expr(expr_id).pretty(100)));
+        }
+        result.push_str(&format!("{}data:\n", " ".repeat(starting_space * 2)));
+        for (inputs, output) in &egraph[eclass.id].data {
+            result.push_str(&format!("{}{} -> {}\n", " ".repeat(starting_space * 2), inputs.iter().map(|(k, v)| format!("{:?}: {}", k, v)).collect::<Vec<_>>().join(", "), output));
+        }
+    }
+    result.trim().to_string()
+}
+
+fn merge_egraphs<L: Language, N: Analysis<L>>(source_egraph: &EGraph<L, N>, target_egraph: &mut EGraph<L, N>) {
+    for id in source_egraph.classes().map(|e| e.id) {
+        let expr = source_egraph.id_to_expr(id);
+        target_egraph.add_expr(&expr);
+    }
+    target_egraph.rebuild();
 }
 
 #[async_std::main]
@@ -556,7 +621,7 @@ async fn main() {
         ]
     };
     let solver = EggSolver::new(grammar.clone());
-    let max_size = 7;
+    let max_size = 200;
 
     let start = std::time::Instant::now();
     let pts = vec![
@@ -567,6 +632,106 @@ async fn main() {
         (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 18), // 4 * 4 + 1 * 2 = 18
         (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 31), // 5 * 5 + 3 * 2 = 31
     ];
+
+    // let pts = vec![
+    //     // x * x + y * 2 + x * y
+    // sizes_corrected = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    // cache_sizes_corrected = [5, 85, 210, 938, 1798, 5892, 10334, 31672, 380988]
+    // egraph_classes_corrected = [1, 29, 39, 133, 167, 613, 744, 2691, 6280]
+    // egraph_nodes_corrected = [5, 85, 205, 853, 1573, 5215, 8875, 27847, 61021]
+
+    //     (HashMap::from([("x".to_string(), 11), ("y".to_string(), 23)]), 420), // 11 * 11 + 23 * 2 + 11 * 23 = 420
+    //     (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 16), // 1 * 1 + 2 * 2 = 5
+    //     (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 29), // 3 * 3 + 4 * 2 = 17
+    //     (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 22), // 4 * 4 + 1 * 2 = 18
+    //     (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 46), // 5 * 5 + 3 * 2 = 31
+    // ];
+
+
+    let start = std::time::Instant::now();
+    let pts = vec![
+        // x * y
+        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 2), // 1 * 2 = 2
+        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 12), // 3 * 4 = 12
+        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 11)]), 44), // 4 * 11 = 44
+    ];
+
+    // x * y + z
+    // grammar.productions.push(Production {
+    //     lhs: "S".to_string(),
+    //     lhs_type: "Var".to_string(),
+    //     rhs: vec![
+    //         ProdComponent::LanguageConstruct(ArithLanguage::Add(Default::default())),
+    //     ]
+    // });
+    let grammar = Grammar {
+        productions: vec![
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LanguageConstruct(ArithLanguage::Var("x".to_string())),
+                    ProdComponent::LanguageConstruct(ArithLanguage::Var("y".to_string())),
+                    ProdComponent::LanguageConstruct(ArithLanguage::Var("z".to_string())),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LanguageConstruct(ArithLanguage::Num(0)),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LanguageConstruct(ArithLanguage::Num(1)),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LanguageConstruct(ArithLanguage::Num(2)),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LanguageConstruct(ArithLanguage::Add(Default::default())),
+                    ProdComponent::LhsName("S".to_string()),
+                    ProdComponent::LhsName("S".to_string()),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LanguageConstruct(ArithLanguage::Sub(Default::default())),
+                    ProdComponent::LhsName("S".to_string()),
+                    ProdComponent::LhsName("S".to_string()),
+                ]
+            },
+            Production {
+                lhs: "S".to_string(),
+                lhs_type: "Op".to_string(),
+                rhs: vec![
+                    ProdComponent::LanguageConstruct(ArithLanguage::Mul(Default::default())),
+                    ProdComponent::LhsName("S".to_string()),
+                    ProdComponent::LhsName("S".to_string()),
+                ]
+            },
+        ]
+    };
+    let start = std::time::Instant::now();
+    let solver = EggSolver::new(grammar.clone());
+    let pts = vec![
+        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2), ("z".to_string(), 3)]), 5), // 1 * 2 + 3 = 5
+        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4), ("z".to_string(), 5)]), 17), // 3 * 4 + 5 = 17
+        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 11), ("z".to_string(), 2)]), 46), // 4 * 11 + 2 = 46
+    ];
     
     let exprs = solver.synthesize(max_size, &pts);
     if exprs.is_empty(){
@@ -576,180 +741,13 @@ async fn main() {
         println!("-------------Synthesized Successfully----------------");
         println!("Test case: {:?}", pts);
         println!("Target program: {}", "x * x + y * 2");
+        // println!("Target program: {}", "x * x + y * 2 + x * y");
         for expr in exprs {
             println!("Program: {}", expr.pretty(100));
         }
         println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
         println!("-----------------------------------------------------");
     }
-
-    let start = std::time::Instant::now();
-    let pts = vec![
-        // 2 * x + y
-        // (+ (* 2 x) y)
-        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
-        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
-        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
-        (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 13), // 2 * 5 + 3 = 13
-        (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 14), // 2 * 6 + 2 = 14
-    ];
-
-    let exprs = solver.synthesize(max_size, &pts);
-    if exprs.is_empty(){
-        println!("No expression could be synthesized.");
-        assert!(false);
-    } else {
-        println!("-------------Synthesized Successfully----------------");
-        println!("Test case: {:?}", pts);
-        println!("Target program: {}", "2 * x + y");
-        for expr in exprs {
-            println!("Program: {}", expr.pretty(100));
-        }
-        println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
-        println!("-----------------------------------------------------");
-    }
-
-    let start = std::time::Instant::now();
-    let pts = vec![
-        // x * y + x
-        // (+ (* x y) x)
-        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 3), // 1 * 2 + 1 = 3
-        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 15), // 3 * 4 + 3 = 15
-        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 8), // 4 * 1 + 4 = 8
-        (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 20), // 5 * 3 + 5 = 20
-        (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 18), // 6 * 2 + 6 = 18
-    ];
-
-    let exprs = solver.synthesize(max_size, &pts)/*.await*/;
-    if exprs.is_empty(){
-        println!("No expression could be synthesized.");
-        assert!(false);
-    } else {
-        println!("-------------Synthesized Successfully----------------");
-        println!("Test case: {:?}", pts);
-        println!("Target program: {}", "x * y + x");
-        for expr in exprs {
-            println!("Program: {}", expr.pretty(100));
-        }
-        println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
-        println!("-----------------------------------------------------");
-    }
-
-    let start = std::time::Instant::now();
-    let pts = vec![
-        // x * y - x - y
-        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), -1), // 1 * 2 - 1 - 2 = -1
-        (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 5), // 3 * 4 - 3 - 4 = 5
-        (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), -1), // 4 * 1 - 4 - 1 = -1
-        (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 7), // 5 * 3 - 5 - 3 = 7
-    ];
-    let exprs = solver.synthesize(max_size, &pts)/*.await*/;
-    if exprs.is_empty(){
-        println!("No expression could be synthesized.");
-        assert!(false);
-    } else {
-        println!("-------------Synthesized Successfully----------------");
-        println!("Test case: {:?}", pts);
-        println!("Target program: {}", "x * y - x - y");
-        for expr in exprs {
-            println!("Program: {}", expr.pretty(100));
-        }
-        println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
-        println!("-----------------------------------------------------");
-    }
-
-    let start = std::time::Instant::now();
-    let pts = vec![
-        // x * (x - y) + 2 * x
-        (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 1), // 1 * (1 - 2) + 2 * 1 = 1
-        (HashMap::from([("x".to_string(), 32), ("y".to_string(), 9)]), 800), // 32 * (32 - 9) + 2 * 32 = 800
-        (HashMap::from([("x".to_string(), 29), ("y".to_string(), 23)]), 232), // 4 * (4 - 1) + 2 * 4 = 10
-        (HashMap::from([("x".to_string(), 2338), ("y".to_string(), 293)]), 4785886), // 2338 * (2338 - 293) + 2 * 2338 = 4785886
-    ];
-    let exprs = solver.synthesize(max_size, &pts)/*.await*/;
-    if exprs.is_empty(){
-        println!("No expression could be synthesized.");
-        assert!(false);
-    } else {
-        println!("-------------Synthesized Successfully----------------");
-        println!("Test case: {:?}", pts);
-        println!("Target program: {}", "x * (x - y) + 2 * x");
-        for expr in exprs {
-            println!("Program: {}", expr.pretty(100));
-        }
-        println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
-        println!("-----------------------------------------------------");
-    }
-
-    // let start = std::time::Instant::now();
-    // grammar.productions.push(
-    //     Production {
-    //         lhs: "S".to_string(),
-    //         lhs_type: "Op".to_string(),
-    //         rhs: vec![
-    //             ProdComponent::LanguageConstruct(ArithLanguage::Var("z".to_string())),
-    //         ]
-    //     }
-    // );
-    // let solver = EggSolver::new(grammar.clone());
-    // let pts = vec![
-    //     // x + y - (x * (y - z) ) - 2 * z
-    //     (HashMap::from([("x".to_string(), 7), ("y".to_string(), 12), ("z".to_string(), 23)]), 50), // 7 + 12 - (7 * (12 - 23)) - 2 * 23 = 50
-    //     (HashMap::from([("x".to_string(), 11), ("y".to_string(), 13), ("z".to_string(), 29)]), 142), // 11 + 13 - (11 * (13 - 29)) - 2 * 29 = 142
-    //     (HashMap::from([("x".to_string(), 3), ("y".to_string(), 7), ("z".to_string(), 13)]), 2), // 3 + 7 - (3 * (7 - 13)) - 2 * 13 = 2
-    // ];
-    // let max_size = 13;
-    // let exprs = solver.synthesize(max_size, &pts)/*.await*/;
-    // if exprs.is_empty(){
-    //     println!("No expression could be synthesized.");
-    //     assert!(false);
-    // } else {
-    //     println!("-------------Synthesized Successfully----------------");
-    //     println!("Test case: {:?}", pts);
-    //     println!("Target program: {}", "x + y - (x * (y - z) ) - 2 * z");
-    //     for expr in exprs {
-    //         println!("Program: {}", expr.pretty(100));
-    //     }
-    //     println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
-    //     println!("-----------------------------------------------------");
-    // }
-}
-
-fn pretty_cache(cache: &HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>, starting_space: usize)  -> String {
-    let mut result = String::new();
-    result.push_str("Cache:\n");
-    for (key, exprs) in cache {
-        for expr in exprs {
-            // println!("[{}, {}]: {}", &key.0, &key.1, expr.pretty(100));
-            // println!("{}[{}, {}]: {}", " ".repeat(starting_space), &key.0, &key.1, expr.pretty(100));
-            result.push_str(&format!("{}[{}, {}]: {}\n", " ".repeat(starting_space), &key.0, &key.1, expr.pretty(100)));
-        }
-    }
-    result.trim().to_string()
-}
-
-fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize) -> String {
-    let mut result = String::new();
-    result.push_str("EGraph:\n");
-    for eclass in egraph.classes() {
-        let expr = egraph.id_to_expr(eclass.id);
-        result.push_str(&format!("{}{}:[{}] {:?}\n", " ".repeat(starting_space), eclass.id, expr.pretty(100), egraph[eclass.id].data.iter().map(| (inputs, output) | output).collect::<Vec<_>>()));
-        for eqc in eclass.iter() {
-            result.push_str(&format!("{}<{}>\n", " ".repeat(starting_space * 2), eqc));
-        }
-        for (inputs, output) in &egraph[eclass.id].data {
-            result.push_str(&format!("{}{} -> {}\n", " ".repeat(starting_space * 2), inputs.iter().map(|(k, v)| format!("{:?}: {}", k, v)).collect::<Vec<_>>().join(", "), output));
-        }
-    }
-    result.trim().to_string()
-}
-
-fn merge_egraphs<L: Language, N: Analysis<L>>(source_egraph: &EGraph<L, N>, target_egraph: &mut EGraph<L, N>) {
-    for id in source_egraph.classes().map(|e| e.id) {
-        let expr = source_egraph.id_to_expr(id);
-        target_egraph.add_expr(&expr);
-    }
-    target_egraph.rebuild();
 }
 
 #[cfg(test)]
@@ -759,5 +757,260 @@ mod tests {
     #[test]
     fn test_egg_enum() {
         main();
+    }
+
+    #[test]
+    fn test_pbd_egs_3() {
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Var("x".to_string())),
+                        ProdComponent::LanguageConstruct(ArithLanguage::Var("y".to_string())),
+                        ProdComponent::LanguageConstruct(ArithLanguage::Var("z".to_string())),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Num(0)),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Num(1)),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Num(2)),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Add(Default::default())),
+                        ProdComponent::LhsName("S".to_string()),
+                        ProdComponent::LhsName("S".to_string()),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Sub(Default::default())),
+                        ProdComponent::LhsName("S".to_string()),
+                        ProdComponent::LhsName("S".to_string()),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Mul(Default::default())),
+                        ProdComponent::LhsName("S".to_string()),
+                        ProdComponent::LhsName("S".to_string()),
+                    ]
+                },
+            ]
+        };
+        let start = std::time::Instant::now();
+        let solver = EggSolver::new(grammar.clone());
+        let pts = vec![
+            // x + y - (x * (y - z) ) - 2 * z
+            (HashMap::from([("x".to_string(), 7), ("y".to_string(), 12), ("z".to_string(), 23)]), 50), // 7 + 12 - (7 * (12 - 23)) - 2 * 23 = 50
+            (HashMap::from([("x".to_string(), 11), ("y".to_string(), 13), ("z".to_string(), 29)]), 142), // 11 + 13 - (11 * (13 - 29)) - 2 * 29 = 142
+            (HashMap::from([("x".to_string(), 3), ("y".to_string(), 7), ("z".to_string(), 13)]), 2), // 3 + 7 - (3 * (7 - 13)) - 2 * 13 = 2
+        ];
+
+        let max_size = 20;
+        let exprs = solver.synthesize(max_size, &pts)/*.await*/;
+        if exprs.is_empty(){
+            println!("No expression could be synthesized.");
+            assert!(false);
+        } else {
+            println!("-------------Synthesized Successfully----------------");
+            println!("Test case: {:?}", pts);
+            println!("Target program: {}", "x + y - (x * (y - z) ) - 2 * z");
+            for expr in exprs {
+                println!("Program: {}", expr.pretty(100));
+            }
+            println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
+            println!("-----------------------------------------------------");
+        }
+    }
+
+    #[test]
+    fn test_pbe_egs() {
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Var("x".to_string())),
+                        ProdComponent::LanguageConstruct(ArithLanguage::Var("y".to_string())),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Num(0)),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Num(1)),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Num(2)),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Add(Default::default())),
+                        ProdComponent::LhsName("S".to_string()),
+                        ProdComponent::LhsName("S".to_string()),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Sub(Default::default())),
+                        ProdComponent::LhsName("S".to_string()),
+                        ProdComponent::LhsName("S".to_string()),
+                    ]
+                },
+                Production {
+                    lhs: "S".to_string(),
+                    lhs_type: "Op".to_string(),
+                    rhs: vec![
+                        ProdComponent::LanguageConstruct(ArithLanguage::Mul(Default::default())),
+                        ProdComponent::LhsName("S".to_string()),
+                        ProdComponent::LhsName("S".to_string()),
+                    ]
+                },
+            ]
+        };
+        let solver = EggSolver::new(grammar.clone());
+        let max_size = 7;
+
+
+        let start = std::time::Instant::now();
+        let pts = vec![
+            // 2 * x + y
+            // (+ (* 2 x) y)
+            (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 4), // 2 * 1 + 2 = 4
+            (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 10), // 2 * 3 + 4 = 10
+            (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
+            (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 13), // 2 * 5 + 3 = 13
+            (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 14), // 2 * 6 + 2 = 14
+        ];
+
+        let exprs = solver.synthesize(max_size, &pts);
+        if exprs.is_empty(){
+            println!("No expression could be synthesized.");
+            assert!(false);
+        } else {
+            println!("-------------Synthesized Successfully----------------");
+            println!("Test case: {:?}", pts);
+            println!("Target program: {}", "2 * x + y");
+            for expr in exprs {
+                println!("Program: {}", expr.pretty(100));
+            }
+            println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
+            println!("-----------------------------------------------------");
+        }
+
+        let start = std::time::Instant::now();
+        let pts = vec![
+            // x * y + x
+            // (+ (* x y) x)
+            (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 3), // 1 * 2 + 1 = 3
+            (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 15), // 3 * 4 + 3 = 15
+            (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 8), // 4 * 1 + 4 = 8
+            (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 20), // 5 * 3 + 5 = 20
+            (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 18), // 6 * 2 + 6 = 18
+        ];
+
+        let exprs = solver.synthesize(max_size, &pts)/*.await*/;
+        if exprs.is_empty(){
+            println!("No expression could be synthesized.");
+            assert!(false);
+        } else {
+            println!("-------------Synthesized Successfully----------------");
+            println!("Test case: {:?}", pts);
+            println!("Target program: {}", "x * y + x");
+            for expr in exprs {
+                println!("Program: {}", expr.pretty(100));
+            }
+            println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
+            println!("-----------------------------------------------------");
+        }
+
+        let start = std::time::Instant::now();
+        let pts = vec![
+            // x * y - x - y
+            (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), -1), // 1 * 2 - 1 - 2 = -1
+            (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 5), // 3 * 4 - 3 - 4 = 5
+            (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), -1), // 4 * 1 - 4 - 1 = -1
+            (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 7), // 5 * 3 - 5 - 3 = 7
+        ];
+
+        let exprs = solver.synthesize(max_size, &pts)/*.await*/;
+        if exprs.is_empty(){
+            println!("No expression could be synthesized.");
+            assert!(false);
+        } else {
+            println!("-------------Synthesized Successfully----------------");
+            println!("Test case: {:?}", pts);
+            println!("Target program: {}", "x * y - x - y");
+            for expr in exprs {
+                println!("Program: {}", expr.pretty(100));
+            }
+            println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
+            println!("-----------------------------------------------------");
+        }
+
+        let start = std::time::Instant::now();
+        let pts = vec![
+            // x * (x - y) + 2 * x
+            (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2)]), 1), // 1 * (1 - 2) + 2 * 1 = 1
+            (HashMap::from([("x".to_string(), 32), ("y".to_string(), 9)]), 800), // 32 * (32 - 9) + 2 * 32 = 800
+            (HashMap::from([("x".to_string(), 29), ("y".to_string(), 23)]), 232), // 4 * (4 - 1) + 2 * 4 = 10
+            (HashMap::from([("x".to_string(), 2338), ("y".to_string(), 293)]), 4785886), // 2338 * (2338 - 293) + 2 * 2338 = 4785886
+        ];
+        let exprs = solver.synthesize(max_size, &pts)/*.await*/;
+        if exprs.is_empty(){
+            println!("No expression could be synthesized.");
+            assert!(false);
+        } else {
+            println!("-------------Synthesized Successfully----------------");
+            println!("Test case: {:?}", pts);
+            println!("Target program: {}", "x * (x - y) + 2 * x");
+            for expr in exprs {
+                println!("Program: {}", expr.pretty(100));
+            }
+            println!("Elapsed time: {:?}ms", start.elapsed().as_millis());
+            println!("-----------------------------------------------------");
+        }
     }
 }
