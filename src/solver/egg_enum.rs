@@ -295,16 +295,24 @@ impl<'a> Enumerator<'a> {
                                 for left_size in 1..size {
                                     let right_size = size - left_size;
                                     
-                                    let mut left_expr_parts = Vec::new();
-                                    let left_exprs = self.cache.get(&(prod.lhs.clone(), left_size)).cloned();
-                                    if let Some(exprs) = left_exprs {
-                                        left_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
+                                    let mut left_expr_parts = self.cache.get(&(prod.lhs.clone(), left_size)).cloned()
+                                            .unwrap_or_default().into_iter().collect::<Vec<_>>();
+                                    for expr in &new_expressions {
+                                        let (key, values) = expr; 
+                                        if key.0 == prod.lhs && key.1 == left_size {
+                                            left_expr_parts.extend(values.iter().cloned().collect::<Vec<_>>());
+                                        }
                                     }
-                                    let mut right_expr_parts = Vec::new();
-                                    let right_exprs = self.cache.get(&(prod.lhs.clone(), right_size)).cloned();
-                                    if let Some(exprs) = right_exprs {
-                                        right_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
+
+                                    let mut right_expr_parts = self.cache.get(&(prod.lhs.clone(), right_size)).cloned()
+                                            .unwrap_or_default().into_iter().collect::<Vec<_>>();
+                                    for expr in &new_expressions {
+                                        let (key, values) = expr; 
+                                        if key.0 == prod.lhs && key.1 == right_size {
+                                            right_expr_parts.extend(values.iter().cloned().collect::<Vec<_>>());
+                                        }
                                     }
+
                                     for left_expr in &left_expr_parts {
                                         for right_expr in &right_expr_parts {
                                             let left_id = self.egraph.add_expr(left_expr);
@@ -332,21 +340,24 @@ impl<'a> Enumerator<'a> {
                                 }
                             },
                             ArithLanguage::Neg(_) => {
-                                for part_size in 1..size {
-                                    let mut expr_parts = Vec::new();
-                                    if let Some(exprs) = self.cache.get(&(prod.lhs.clone(), part_size)) {
-                                        expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
+                                let right_size = size - 1;
+                                
+                                let mut right_expr_parts = self.cache.get(&(prod.lhs.clone(), right_size)).cloned()
+                                        .unwrap_or_default().into_iter().collect::<Vec<_>>();
+                                for expr in &new_expressions {
+                                    let (key, values) = expr; 
+                                    if key.0 == prod.lhs && key.1 == right_size {
+                                        right_expr_parts.extend(values.iter().cloned().collect::<Vec<_>>());
                                     }
-                                    for expr in expr_parts.into_iter() {
-                                        let mut new_expr = expr.clone();
-                                        let id = new_expr.add(lang_construct.clone()); // we don't care the id of a unary operator
-                                        self.egraph.add_expr(&new_expr);
-                                        // new_expr.add(ArithLanguage::Neg([id]));
-                                        // println!("<Enumerator::grow> expr: {}", new_expr.pretty(100));
-                                        new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&new_expr)))
-                                                        .or_insert_with(HashSet::new)
-                                                        .insert(new_expr);
-                                    }
+                                } // This is necessary, otherwise, some exprs will be never taken into consideration due to the laziness
+
+                                for right_expr in &right_expr_parts {
+                                    let right_id = self.egraph.add_expr(right_expr);
+                                    let id = self.egraph.add(ArithLanguage::Neg([right_id]));
+                                    let expr = self.egraph.id_to_expr(id);
+                                    new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
+                                                   .or_insert_with(HashSet::new)
+                                                   .insert(expr);
                                 }
                             },
                             _ => {}
@@ -464,26 +475,27 @@ impl EggSolver {
         // println!("<EggSolver::synthesize> Start time: {:?}", start);
         while enumerator.current_size < max_size {
             let exprs = enumerator.enumerate(max_size, &pts)/*.await */;
-            let exprs_sat = exprs.iter().filter(|expr| self.verify(expr, pts_all).is_none()).collect::<Vec<_>>();
-            // let cexs: Option<_> = exprs.iter().map(|expr| self.verify(expr, pts_all)).fold(None, |acc, cex| acc.or(cex));
-            // let cexs: Vec<_> = exprs.iter().map(|expr| self.verify(expr, pts_all)).filter(|cex| cex.is_some()).map(|cex| cex.unwrap()).unique_by(|(inputs, output)| inputs.iter
+            let mut exprs_sat = vec![];
+            let mut cex_unsat = None;
+            for expr in &exprs {
+                if let Some(cex) = self.verify(expr, pts_all){
+                    if cex_unsat.is_none() {
+                        cex_unsat = Some(cex);
+                    }
+                } else {
+                    exprs_sat.push(expr.clone());
+                }
+            }
             if !exprs_sat.is_empty() {
                 // target found
-                // println!("Target found!");
-                // println!("{}", pretty_cache(&enumerator.cache, 2));
-                println!("{}", pretty_egraph(&enumerator.egraph, 2));
+                println!("{}", pretty_cache(&enumerator.cache, 2));
+                // println!("{}", pretty_egraph(&enumerator.egraph, 2));
                 // println!("Time elapsed: {:?}", start.elapsed());
-                return exprs_sat.iter().cloned().map(|expr| expr.clone()).collect();
-            } else if !exprs.is_empty() {
+                return exprs_sat;
+            }
+            if !exprs.is_empty() {
                 // cannot find target within current size
-                let expr = exprs.first().unwrap();
-                if let Some(cex) = self.verify(expr, pts_all) {
-                    pts.push(cex);
-                } else {
-                    // unreachable
-                }
-            } {
-                // unreachable
+                pts.push(cex_unsat.unwrap());
             }
         }
         vec![]
@@ -621,7 +633,7 @@ async fn main() {
         ]
     };
     let solver = EggSolver::new(grammar.clone());
-    let max_size = 200;
+    let max_size = 4;
 
     let start = std::time::Instant::now();
     let pts = vec![
@@ -664,67 +676,15 @@ async fn main() {
     //         ProdComponent::LanguageConstruct(ArithLanguage::Add(Default::default())),
     //     ]
     // });
-    let grammar = Grammar {
-        productions: vec![
-            Production {
-                lhs: "S".to_string(),
-                lhs_type: "Op".to_string(),
-                rhs: vec![
-                    ProdComponent::LanguageConstruct(ArithLanguage::Var("x".to_string())),
-                    ProdComponent::LanguageConstruct(ArithLanguage::Var("y".to_string())),
-                    ProdComponent::LanguageConstruct(ArithLanguage::Var("z".to_string())),
-                ]
-            },
-            Production {
-                lhs: "S".to_string(),
-                lhs_type: "Op".to_string(),
-                rhs: vec![
-                    ProdComponent::LanguageConstruct(ArithLanguage::Num(0)),
-                ]
-            },
-            Production {
-                lhs: "S".to_string(),
-                lhs_type: "Op".to_string(),
-                rhs: vec![
-                    ProdComponent::LanguageConstruct(ArithLanguage::Num(1)),
-                ]
-            },
-            Production {
-                lhs: "S".to_string(),
-                lhs_type: "Op".to_string(),
-                rhs: vec![
-                    ProdComponent::LanguageConstruct(ArithLanguage::Num(2)),
-                ]
-            },
-            Production {
-                lhs: "S".to_string(),
-                lhs_type: "Op".to_string(),
-                rhs: vec![
-                    ProdComponent::LanguageConstruct(ArithLanguage::Add(Default::default())),
-                    ProdComponent::LhsName("S".to_string()),
-                    ProdComponent::LhsName("S".to_string()),
-                ]
-            },
-            Production {
-                lhs: "S".to_string(),
-                lhs_type: "Op".to_string(),
-                rhs: vec![
-                    ProdComponent::LanguageConstruct(ArithLanguage::Sub(Default::default())),
-                    ProdComponent::LhsName("S".to_string()),
-                    ProdComponent::LhsName("S".to_string()),
-                ]
-            },
-            Production {
-                lhs: "S".to_string(),
-                lhs_type: "Op".to_string(),
-                rhs: vec![
-                    ProdComponent::LanguageConstruct(ArithLanguage::Mul(Default::default())),
-                    ProdComponent::LhsName("S".to_string()),
-                    ProdComponent::LhsName("S".to_string()),
-                ]
-            },
-        ]
-    };
+    grammar.productions.push(
+        Production {
+            lhs: "S".to_string(),
+            lhs_type: "Op".to_string(),
+            rhs: vec![
+                ProdComponent::LanguageConstruct(ArithLanguage::Var("z".to_string())),
+            ]
+        },
+    );
     let start = std::time::Instant::now();
     let solver = EggSolver::new(grammar.clone());
     let pts = vec![
