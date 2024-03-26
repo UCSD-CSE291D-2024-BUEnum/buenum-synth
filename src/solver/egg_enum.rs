@@ -292,29 +292,33 @@ impl<'a> Enumerator<'a> {
                         match lang_construct {
                             ArithLanguage::Add(_) | ArithLanguage::Sub(_) | ArithLanguage::Mul(_) => {
                                 let num_nonterminals = lang_construct.children().len();
-                                for left_size in 1..size {
-                                    let right_size = size - left_size;
-                                    
-                                    let mut left_expr_parts = self.cache.get(&(prod.lhs.clone(), left_size)).cloned()
-                                            .unwrap_or_default().into_iter().collect::<Vec<_>>();
-                                    for expr in &new_expressions {
-                                        let (key, values) = expr; 
-                                        if key.0 == prod.lhs && key.1 == left_size {
-                                            left_expr_parts.extend(values.iter().cloned().collect::<Vec<_>>());
+                                for left_size in 1..(size-1) {
+                                    let right_size = (size-1) - left_size;
+                                    println!("<Enumerator::grow> left_size: {}, right_size: {}", left_size, right_size);
+
+                                    let mut left_expr_parts = self.cache
+                                        .get(&(prod.lhs.clone(), left_size)).cloned().unwrap_or_default()
+                                        .into_iter().collect::<Vec<_>>();
+                                    for entry in &new_expressions {
+                                        let ((prod_name, expr_size), exprs) = entry; 
+                                        if prod_name == &prod.lhs && expr_size == &left_size {
+                                            left_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
                                         }
                                     }
 
-                                    let mut right_expr_parts = self.cache.get(&(prod.lhs.clone(), right_size)).cloned()
-                                            .unwrap_or_default().into_iter().collect::<Vec<_>>();
-                                    for expr in &new_expressions {
-                                        let (key, values) = expr; 
-                                        if key.0 == prod.lhs && key.1 == right_size {
-                                            right_expr_parts.extend(values.iter().cloned().collect::<Vec<_>>());
+                                    let mut right_expr_parts = self.cache
+                                        .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
+                                        .into_iter().collect::<Vec<_>>();
+                                    for entry in &new_expressions {
+                                        let ((prod_name, expr_size), exprs) = entry; 
+                                        if prod_name == &prod.lhs && expr_size == &right_size {
+                                            right_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
                                         }
                                     }
 
                                     for left_expr in &left_expr_parts {
                                         for right_expr in &right_expr_parts {
+                                            println!("<Enumerator::grow> op: {:?}, left_expr: {:?}, right_expr: {:?}", pretty_op(lang_construct), left_expr.pretty(100), right_expr.pretty(100));
                                             let left_id = self.egraph.add_expr(left_expr);
                                             let right_id = self.egraph.add_expr(right_expr);
                             
@@ -342,15 +346,15 @@ impl<'a> Enumerator<'a> {
                             ArithLanguage::Neg(_) => {
                                 let right_size = size - 1;
                                 
-                                let mut right_expr_parts = self.cache.get(&(prod.lhs.clone(), right_size)).cloned()
-                                        .unwrap_or_default().into_iter().collect::<Vec<_>>();
-                                for expr in &new_expressions {
-                                    let (key, values) = expr; 
-                                    if key.0 == prod.lhs && key.1 == right_size {
-                                        right_expr_parts.extend(values.iter().cloned().collect::<Vec<_>>());
+                                let mut right_expr_parts = self.cache
+                                    .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
+                                    .into_iter().collect::<Vec<_>>();
+                                for entry in &new_expressions {
+                                    let ((prod_name, expr_size), exprs) = entry; 
+                                    if prod_name == &prod.lhs && expr_size == &right_size {
+                                        right_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
                                     }
                                 } // This is necessary, otherwise, some exprs will be never taken into consideration due to the laziness
-
                                 for right_expr in &right_expr_parts {
                                     let right_id = self.egraph.add_expr(right_expr);
                                     let id = self.egraph.add(ArithLanguage::Neg([right_id]));
@@ -384,11 +388,11 @@ impl<'a> Enumerator<'a> {
         //     }
         //     self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
         // }
-        self.merge_equivs();
+        // self.merge_equivs();
         self.egraph.rebuild();
 
-        // println!("{}", pretty_cache(&self.cache, 2));
-        // println!("{}", pretty_egraph(&self.egraph, 2));
+        println!("{}", pretty_cache(&self.cache, 2));
+        println!("{}", pretty_egraph(&self.egraph, 2));
         self.current_size = size;
     }
 
@@ -523,6 +527,17 @@ impl EggSolver {
     }
 }
 
+fn pretty_op(op: &ArithLanguage) -> String {
+    match op {
+        ArithLanguage::Num(n) => format!("{}", n),
+        ArithLanguage::Var(name) => name.clone(),
+        ArithLanguage::Add(_) => "+".to_string(),
+        ArithLanguage::Sub(_) => "-".to_string(),
+        ArithLanguage::Mul(_) => "*".to_string(),
+        ArithLanguage::Neg(_) => "-".to_string(),
+    }
+}
+
 fn pretty_cache(cache: &HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>, starting_space: usize)  -> String {
     let mut result = String::new();
     result.push_str("Cache:\n");
@@ -633,7 +648,7 @@ async fn main() {
         ]
     };
     let solver = EggSolver::new(grammar.clone());
-    let max_size = 4;
+    let max_size = 20;
 
     let start = std::time::Instant::now();
     let pts = vec![
@@ -679,12 +694,13 @@ async fn main() {
     grammar.productions.push(
         Production {
             lhs: "S".to_string(),
-            lhs_type: "Op".to_string(),
+            lhs_type: "Var".to_string(),
             rhs: vec![
                 ProdComponent::LanguageConstruct(ArithLanguage::Var("z".to_string())),
             ]
         },
     );
+    let max_size = 5;
     let start = std::time::Instant::now();
     let solver = EggSolver::new(grammar.clone());
     let pts = vec![
@@ -700,8 +716,9 @@ async fn main() {
     } else {
         println!("-------------Synthesized Successfully----------------");
         println!("Test case: {:?}", pts);
-        println!("Target program: {}", "x * x + y * 2");
+        // println!("Target program: {}", "x * x + y * 2");
         // println!("Target program: {}", "x * x + y * 2 + x * y");
+        println!("Target program: {}", "x * y + z");
         for expr in exprs {
             println!("Program: {}", expr.pretty(100));
         }
