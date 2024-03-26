@@ -61,7 +61,73 @@ struct Grammar {
 struct ObsEquiv {
     pts: IOPairs,
 }
+// struct OperatorCostFn;
 
+// impl CostFunction<ArithLanguage> for OperatorCostFn {
+//     type Cost = f64;
+
+//     fn cost<C>(&mut self, enode: &ArithLanguage, mut costs: C) -> Self::Cost
+//     where
+//         C: FnMut(Id) -> Self::Cost,
+//     {
+//         let op_cost = match enode {
+//             ArithLanguage::Num(_) => -1.0,
+//             ArithLanguage::Var(_) => -1.0,
+//             ArithLanguage::Add(_) | ArithLanguage::Sub(_) => -2.0,
+//             ArithLanguage::Mul(_) => -3.0,
+//             ArithLanguage::Neg(_) => -1.5,
+//         };
+        
+//         let children_cost: f64 = enode.fold(0.0, |sum, id| sum + costs(id));
+//         op_cost + children_cost
+//     }
+// }
+
+// struct VarietyCostFn<'a> {
+//     egraph: &'a EGraph<ArithLanguage, ObsEquiv>,
+// }
+
+// impl<'a> CostFunction<ArithLanguage> for VarietyCostFn<'a>  {
+//     type Cost = f64;
+
+//     fn cost<C>(&mut self, enode: &ArithLanguage, mut costs: C) -> Self::Cost
+//     where
+//         C: FnMut(Id) -> Self::Cost,
+//     {
+//         let mut variables:HashSet<String> = HashSet::new();
+        
+//         let variety_cost = match enode {
+//             ArithLanguage::Num(_) => -1.0,
+//             ArithLanguage::Var(name) => {
+//                 variables.insert(name.clone());
+//                 -2.0
+//             },
+//             _ => -0.0,
+//         };
+
+//         let children_cost: f64 = enode.fold(0.0, |sum, id| {
+//             let child_cost = costs(id);
+//             variables.extend(self.get_variables(id));
+//             sum + child_cost
+//         });
+
+//         // variety_cost + children_cost + 
+//         -(variables.len() as f64)
+//     }
+// }
+
+// impl VarietyCostFn<'_> {
+//     fn get_variables(&self, id: Id) -> HashSet<String> {
+//         let mut variables = HashSet::new();
+//         if let Some(var_name) = self.egraph[id].nodes.iter().find_map(|n| match n {
+//             ArithLanguage::Var(name) => Some(name.clone()),
+//             _ => None,
+//         }) {
+//             variables.insert(var_name);
+//         }
+//         variables
+//     }
+// }
 // TODO:
 // 1. IOPairs -> IOPair
 // 2. Implement methods for IOPair
@@ -263,6 +329,11 @@ impl<'a> Enumerator<'a> {
                         match lang_construct {
                             ArithLanguage::Num(_) | ArithLanguage::Var(_) => {
                                 let id = self.egraph.add(lang_construct.clone());
+                                
+                                // let var_extractor = Extractor::new(&self.egraph, VarietyCostFn { egraph: &self.egraph });
+                                // let (var_cost, var_best_expr) = var_extractor.find_best(id);
+                                // let expr = var_best_expr /*self.egraph.id_to_expr(id)*/;
+
                                 let expr = self.egraph.id_to_expr(id);
                                 new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                .or_insert_with(HashSet::new)
@@ -294,7 +365,7 @@ impl<'a> Enumerator<'a> {
                                 let num_nonterminals = lang_construct.children().len();
                                 for left_size in 1..(size-1) {
                                     let right_size = (size-1) - left_size;
-                                    println!("<Enumerator::grow> left_size: {}, right_size: {}", left_size, right_size);
+                                    // println!("<Enumerator::grow> left_size: {}, right_size: {}", left_size, right_size);
 
                                     let mut left_expr_parts = self.cache
                                         .get(&(prod.lhs.clone(), left_size)).cloned().unwrap_or_default()
@@ -318,7 +389,7 @@ impl<'a> Enumerator<'a> {
 
                                     for left_expr in &left_expr_parts {
                                         for right_expr in &right_expr_parts {
-                                            println!("<Enumerator::grow> op: {:?}, left_expr: {:?}, right_expr: {:?}", pretty_op(lang_construct), left_expr.pretty(100), right_expr.pretty(100));
+                                            // println!("<Enumerator::grow> op: {:?}, left_expr: {:?}, right_expr: {:?}", pretty_op(lang_construct), left_expr.pretty(100), right_expr.pretty(100));
                                             let left_id = self.egraph.add_expr(left_expr);
                                             let right_id = self.egraph.add_expr(right_expr);
                             
@@ -334,7 +405,11 @@ impl<'a> Enumerator<'a> {
                                                 },
                                                 _ => unreachable!(),
                                             };
-                            
+
+                                            // let var_extractor = Extractor::new(&self.egraph, VarietyCostFn { egraph: &self.egraph });
+                                            // let (var_cost, var_best_expr) = var_extractor.find_best(id);
+                                            // let expr = var_best_expr /*self.egraph.id_to_expr(id)*/;
+
                                             let expr = self.egraph.id_to_expr(id);
                                             new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                            .or_insert_with(HashSet::new)
@@ -358,6 +433,11 @@ impl<'a> Enumerator<'a> {
                                 for right_expr in &right_expr_parts {
                                     let right_id = self.egraph.add_expr(right_expr);
                                     let id = self.egraph.add(ArithLanguage::Neg([right_id]));
+
+                                    // let var_extractor = Extractor::new(&self.egraph, VarietyCostFn { egraph: &self.egraph });
+                                    // let (var_cost, var_best_expr) = var_extractor.find_best(id);
+                                    // let expr = var_best_expr /*self.egraph.id_to_expr(id)*/; 
+                                   
                                     let expr = self.egraph.id_to_expr(id);
                                     new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                    .or_insert_with(HashSet::new)
@@ -388,7 +468,7 @@ impl<'a> Enumerator<'a> {
         //     }
         //     self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
         // }
-        // self.merge_equivs();
+        self.merge_equivs();
         self.egraph.rebuild();
 
         println!("{}", pretty_cache(&self.cache, 2));
@@ -481,8 +561,12 @@ impl EggSolver {
             let exprs = enumerator.enumerate(max_size, &pts)/*.await */;
             let mut exprs_sat = vec![];
             let mut cex_unsat = None;
+            // let var_extractor = Extractor::new(&enumerator.egraph, VarietyCostFn { egraph: &enumerator.egraph });
+            // let var_extractor = Extractor::new(&enumerator.egraph, AstSize);
             for expr in &exprs {
-                if let Some(cex) = self.verify(expr, pts_all){
+                // let (var_cost, var_best_expr) = var_extractor.find_best(enumerator.egraph.lookup_expr(expr).unwrap());
+                // let expr = var_best_expr /*self.egraph.id_to_expr(id)*/;
+                if let Some(cex) = self.verify(&expr, pts_all){
                     if cex_unsat.is_none() {
                         cex_unsat = Some(cex);
                     }
