@@ -479,12 +479,12 @@ impl<'a> Enumerator<'a> {
 
 
     /* async */fn enumerate(&mut self, size: usize, pts: &IOPairs) -> Vec<RecExpr<ArithLanguage>> {
-        println!("<Enumerator::enumerate> current size: {}", self.current_size);
         if self.egraph.analysis.pts.len() != pts.len() {
             // println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}", self.egraph.analysis.pts);
             self.rebuild(pts);
             // println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}", self.egraph.analysis.pts);
         }
+        println!("<Enumerator::enumerate> current size: {}, pts: {:?}", self.current_size, pts);
         let mut result: Vec<RecExpr<ArithLanguage>> = vec![];
         while self.current_size <= size {
             if self.current_size < size {
@@ -502,12 +502,16 @@ impl<'a> Enumerator<'a> {
             result.clear();
             for expr in exprs {
                 if self.satisfies_pts(expr, pts) {
-                    println!("<Enumerator::enumerate> expr: {:?} satisfies pts: {:?}", expr.pretty(100), pts);
+                    // println!("<Enumerator::enumerate> expr: {:?} satisfies pts: {:?}", expr.pretty(100), pts);
                     result.push(expr.clone());
                 }
             }
             if !result.is_empty() {
+                println!("<Enumerator::enumerate> Found {} expressions that satisfy pts: {:?}", result.len(), pts);
                 break;
+            }
+            for expr in &result {
+                println!("<Enumerator::enumerate> expr: {:?}", expr.pretty(100));
             }
             if self.current_size == size {
                 break;
@@ -560,17 +564,25 @@ impl EggSolver {
         // println!("<EggSolver::synthesize> Start time: {:?}", start);
         while enumerator.current_size < max_size {
             let mut exprs = enumerator.enumerate(max_size, &pts)/*.await */;
-            let mut equiv_exprs = vec![];
+            let mut equiv_exprs = HashSet::new();
             for expr in &exprs {
+                if equiv_exprs.contains(expr) {
+                    println!("<EggSolver::synthesize> Expr: {:?} already in equiv_exprs", expr.pretty(100));
+                    continue;
+                }
                 // use equiv_exprs to get all equivalent expressions
                 let equivs = get_equiv_exprs(&enumerator.egraph, expr);
-                println!("<EggSolver::synthesize> expr: {} has {} equivs", expr.pretty(100), equivs.len());
+                println!("<EggSolver::synthesize> Expr: {:?} has {} equivs", expr.pretty(100), equivs.len());
                 for equiv in &equivs {
-                    println!("<EggSolver::synthesize> equiv: {}", equiv.pretty(100));
+                    // println!("<EggSolver::synthesize> equiv: {}", equiv.pretty(100));
                 }
                 equiv_exprs.extend(equivs);
             }
-            exprs = equiv_exprs;
+            exprs = equiv_exprs.into_iter().collect::<Vec<_>>();
+            println!("<EggSolver::synthesize> Total synthesized exprs: {}", exprs.len());
+            for expr in &exprs {
+                println!("<EggSolver::synthesize> Equiv expr: {}", expr.pretty(100));
+            }
             let mut exprs_sat = vec![];
             let mut cex_unsat = None;
             // let var_extractor = Extractor::new(&enumerator.egraph, VarietyCostFn { egraph: &enumerator.egraph });
@@ -670,11 +682,8 @@ fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize
             let node_str = format!("{:?}", node);
             result.push_str(&format!("{}{}:", " ".repeat(starting_space * 3), node_str));
             result.push_str(" ".repeat(align_space + 1 - node_str.len()).as_str());
-            result.push_str("(");
-            result.push_str(&pretty_op(node, true));
-            let node_expr_str = node.children().iter().map(|child| format!("{}", egraph.id_to_expr(*child).pretty(100))).collect::<Vec<_>>().join(" ");
-            result.push_str(&node_expr_str);
-            result.push_str(")\n");
+            let child_expr = node.join_recexprs(|id| egraph.id_to_expr(id));
+            result.push_str(&format!("{}\n", child_expr.pretty(100)));
         }
         // // expr ids
         // result.push_str(&format!("{}exprs:\n", " ".repeat(starting_space * 2)));
@@ -687,38 +696,75 @@ fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize
 }
 
 fn _build_recexpr<F>(root: &ArithLanguage, mut get_node: F) -> Option<RecExpr<ArithLanguage>> 
-where F: FnMut(Id) -> ArithLanguage
+where F: FnMut(Id) -> Option<ArithLanguage>
 {
     let mut set = IndexSet::<ArithLanguage>::default();
     let mut ids = HashMap::<Id, Id>::default();
     let mut todo = root.children().to_vec();
+    let mut visited = HashSet::<Id>::default();
+    println!("<_build_recexpr> root: {:?}", root);
+    println!("<_build_recexpr> todo init: {:?}", todo);
 
-    while let Some(id) = todo.last().copied() {
-        if ids.contains_key(&id) {
-            todo.pop();
+    while let Some(id) = todo.pop() {
+        if visited.contains(&id) {
             continue;
         }
-
-        let node = get_node(id);
-
-        // check to see if we can do this node yet
-        let mut ids_has_all_children = true;
-        for child in node.children() {
-            if !ids.contains_key(child) {
-                ids_has_all_children = false;
-                todo.push(*child)
+        if let Some(node) = get_node(id) {
+            visited.insert(id);
+            for child in node.children() {
+                if !todo.contains(child) {
+                    todo.push(*child);
+                }
             }
         }
+    }
+    println!("<_build_recexpr> todo: {:?}", todo);
+    println!("<_build_recexpr> visited: {:?}", visited);
 
-        // all children are processed, so we can lookup this node safely
-        if ids_has_all_children {
-            let node = node.map_children(|id| ids[&id]);
-            let new_id = set.insert_full(node).0;
-            ids.insert(id, Id::from(new_id));
-            todo.pop();
-        }
+    for id in visited {
+        let node = get_node(id).unwrap();
+        let new_id = set.insert_full(node).0;
+        ids.insert(id, Id::from(new_id));
+        println!("<_build_recexpr> ids: {:?}", ids);
     }
 
+    // while let Some(id) = todo.last().copied() {
+    //     cnt += 1;
+    //     println!("<_build_recexpr> loop cnt: {}, id: {:?}", cnt, id);
+    //     if ids.contains_key(&id) {
+    //         todo.pop();
+    //         continue;
+    //     }
+
+    //     let node = get_node(id);
+    //     println!("<_build_recexpr> node: {:?}", node);
+
+    //     // check to see if we can do this node yet
+    //     let mut ids_has_all_children = true;
+    //     for child in node.children() {
+    //         if !ids.contains_key(child) {
+    //             ids_has_all_children = false;
+    //             if !todo.contains(child) {
+    //                 println!("<_build_recexpr> todo push: {:?} (todo.len: {})", child, todo.len());
+    //                 todo.push(*child);
+    //             }
+    //         }
+    //     }
+
+    //     println!("<_build_recexpr> ids_has_all_children: {}", ids_has_all_children);
+    //     println!("<_build_recexpr> todo: {:?}", todo);
+    //     println!("<_build_recexpr> ids: {:?}", ids);
+
+    //     // all children are processed, so we can lookup this node safely
+    //     if ids_has_all_children {
+    //         let node = node.map_children(|id| ids[&id]);
+    //         let new_id = set.insert_full(node).0;
+    //         ids.insert(id, Id::from(new_id));
+    //         todo.pop();
+    //     }
+    //     println!("<_build_recexpr> ids: {:?}", ids);
+    //     println!("<_build_recexpr> todo: {:?}", todo);
+    // }
     // finally, add the root node and create the expression
     let mut nodes: Vec<ArithLanguage> = set.into_iter().collect();
     nodes.push(root.clone().map_children(|id| ids[&id]));
@@ -726,18 +772,17 @@ where F: FnMut(Id) -> ArithLanguage
 }
 
 fn get_equiv_exprs(egraph: &EGraph<ArithLanguage, ObsEquiv>, expr: &RecExpr<ArithLanguage>) -> Vec<RecExpr<ArithLanguage>> {
-    println!("<get_equiv_exprs> representative expr: {}", expr.pretty(100));
+    // println!("<get_equiv_exprs> representative expr: {}", expr.pretty(100));
     let mut exprs = vec![];
     if let Some(id) = egraph.lookup_expr(expr) {
+        // println!("<get_equiv_exprs> id: {:?}", id);
         let eclass = &egraph[id];
-        exprs.push(expr.clone());
+        // println!("<get_equiv_exprs> eclass: {:?}", eclass);
         for node in &eclass.nodes {
-            println!("<get_equiv_exprs> node: {:?}", node);
-            let build_expr = |id| egraph[id].nodes[0].clone();
-            // TODO: Fix the bug in build_recexpr method
-            let recexpr = _build_recexpr(node, build_expr).unwrap();
-            println!("<get_equiv_exprs> recexpr: {}", recexpr.pretty(100));
-            exprs.push(recexpr);
+            // println!("<get_equiv_exprs> node: {:?}", node); // type: &ArithLanguage
+            let new_expr = node.join_recexprs(|id| egraph.id_to_expr(id));
+            // println!("<get_equiv_exprs> new_expr: {}", new_expr.pretty(100));
+            exprs.push(new_expr);
         }
     }
     exprs
