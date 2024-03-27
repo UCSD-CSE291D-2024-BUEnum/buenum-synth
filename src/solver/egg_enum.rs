@@ -5,6 +5,7 @@ use async_std::task::{self, yield_now};
 
 use cfg::earley::grammar;
 use egg::{rewrite as rw, *};
+use indexmap::IndexSet;
 use itertools::Itertools;
 
 define_language! {
@@ -685,6 +686,45 @@ fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize
     result.trim().to_string()
 }
 
+fn _build_recexpr<F>(root: &ArithLanguage, mut get_node: F) -> Option<RecExpr<ArithLanguage>> 
+where F: FnMut(Id) -> ArithLanguage
+{
+    let mut set = IndexSet::<ArithLanguage>::default();
+    let mut ids = HashMap::<Id, Id>::default();
+    let mut todo = root.children().to_vec();
+
+    while let Some(id) = todo.last().copied() {
+        if ids.contains_key(&id) {
+            todo.pop();
+            continue;
+        }
+
+        let node = get_node(id);
+
+        // check to see if we can do this node yet
+        let mut ids_has_all_children = true;
+        for child in node.children() {
+            if !ids.contains_key(child) {
+                ids_has_all_children = false;
+                todo.push(*child)
+            }
+        }
+
+        // all children are processed, so we can lookup this node safely
+        if ids_has_all_children {
+            let node = node.map_children(|id| ids[&id]);
+            let new_id = set.insert_full(node).0;
+            ids.insert(id, Id::from(new_id));
+            todo.pop();
+        }
+    }
+
+    // finally, add the root node and create the expression
+    let mut nodes: Vec<ArithLanguage> = set.into_iter().collect();
+    nodes.push(root.clone().map_children(|id| ids[&id]));
+    Some(RecExpr::from(nodes))
+}
+
 fn get_equiv_exprs(egraph: &EGraph<ArithLanguage, ObsEquiv>, expr: &RecExpr<ArithLanguage>) -> Vec<RecExpr<ArithLanguage>> {
     println!("<get_equiv_exprs> representative expr: {}", expr.pretty(100));
     let mut exprs = vec![];
@@ -695,9 +735,9 @@ fn get_equiv_exprs(egraph: &EGraph<ArithLanguage, ObsEquiv>, expr: &RecExpr<Arit
             println!("<get_equiv_exprs> node: {:?}", node);
             let build_expr = |id| egraph[id].nodes[0].clone();
             // TODO: Fix the bug in build_recexpr method
-            // let recexpr = node.build_recexpr(build_expr);
-            // println!("<get_equiv_exprs> recexpr: {}", recexpr.pretty(100));
-            // exprs.push(recexpr);
+            let recexpr = _build_recexpr(node, build_expr).unwrap();
+            println!("<get_equiv_exprs> recexpr: {}", recexpr.pretty(100));
+            exprs.push(recexpr);
         }
     }
     exprs
