@@ -558,7 +558,18 @@ impl EggSolver {
         let start = std::time::Instant::now();
         // println!("<EggSolver::synthesize> Start time: {:?}", start);
         while enumerator.current_size < max_size {
-            let exprs = enumerator.enumerate(max_size, &pts)/*.await */;
+            let mut exprs = enumerator.enumerate(max_size, &pts)/*.await */;
+            let mut equiv_exprs = vec![];
+            for expr in &exprs {
+                // use equiv_exprs to get all equivalent expressions
+                let equivs = get_equiv_exprs(&enumerator.egraph, expr);
+                println!("<EggSolver::synthesize> expr: {} has {} equivs", expr.pretty(100), equivs.len());
+                for equiv in &equivs {
+                    println!("<EggSolver::synthesize> equiv: {}", equiv.pretty(100));
+                }
+                equiv_exprs.extend(equivs);
+            }
+            exprs = equiv_exprs;
             let mut exprs_sat = vec![];
             let mut cex_unsat = None;
             // let var_extractor = Extractor::new(&enumerator.egraph, VarietyCostFn { egraph: &enumerator.egraph });
@@ -611,14 +622,19 @@ impl EggSolver {
     }
 }
 
-fn pretty_op(op: &ArithLanguage) -> String {
-    match op {
+fn pretty_op(op: &ArithLanguage, ends: bool) -> String {
+    let op_str = match op {
         ArithLanguage::Num(n) => format!("{}", n),
         ArithLanguage::Var(name) => name.clone(),
         ArithLanguage::Add(_) => "+".to_string(),
         ArithLanguage::Sub(_) => "-".to_string(),
         ArithLanguage::Mul(_) => "*".to_string(),
         ArithLanguage::Neg(_) => "-".to_string(),
+    };
+    if ends && !matches!(op, ArithLanguage::Num(_) | ArithLanguage::Var(_)){
+        format!("{} ", op_str)
+    } else {
+        format!("{}", op_str)
     }
 }
 
@@ -640,23 +656,51 @@ fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize
     result.push_str("EGraph:\n");
     for eclass in egraph.classes() {
         let expr = egraph.id_to_expr(eclass.id);
-        result.push_str(&format!("{}{}:[{}] {:?}\n", " ".repeat(starting_space), eclass.id, expr.pretty(100), egraph[eclass.id].data.iter().map(| (inputs, output) | output).collect::<Vec<_>>()));
-        result.push_str(&format!("{}nodes:\n", " ".repeat(starting_space * 2)));
-        for node in &eclass.nodes {
-            result.push_str(&format!("{}{:?}\n", " ".repeat(starting_space * 2), node));
-        }
-        // expr ids
-        result.push_str(&format!("{}exprs:\n", " ".repeat(starting_space * 2)));
-        let ids = egraph.lookup_expr_ids(&expr).unwrap_or_default();
-        for expr_id in ids {
-            result.push_str(&format!("{}{}\n", " ".repeat(starting_space * 2), egraph.id_to_expr(expr_id).pretty(100)));
-        }
-        result.push_str(&format!("{}data:\n", " ".repeat(starting_space * 2)));
+        result.push_str(&format!("{}<{}>: [{}] -> {:?}\n", " ".repeat(starting_space), eclass.id, expr.pretty(100), egraph[eclass.id].data.iter().map(| (inputs, output) | output).collect::<Vec<_>>()));
+        // Data
+        result.push_str(&format!("{}<data>:\n", " ".repeat(starting_space * 2)));
         for (inputs, output) in &egraph[eclass.id].data {
-            result.push_str(&format!("{}{} -> {}\n", " ".repeat(starting_space * 2), inputs.iter().map(|(k, v)| format!("{:?}: {}", k, v)).collect::<Vec<_>>().join(", "), output));
+            result.push_str(&format!("{}[{}] -> {}\n", " ".repeat(starting_space * 3), inputs.iter().sorted().map(|(k, v)| format!("{}: {}", k, v)).collect::<Vec<_>>().join(", "), output));
         }
+        // Nodes
+        result.push_str(&format!("{}<nodes>:\n", " ".repeat(starting_space * 2)));
+        let align_space = eclass.nodes.iter().map(|node| format!("{:?}", node)).map(|s| s.len()).max().unwrap_or_default();
+        for node in &eclass.nodes {
+            let node_str = format!("{:?}", node);
+            result.push_str(&format!("{}{}:", " ".repeat(starting_space * 3), node_str));
+            result.push_str(" ".repeat(align_space + 1 - node_str.len()).as_str());
+            result.push_str("(");
+            result.push_str(&pretty_op(node, true));
+            let node_expr_str = node.children().iter().map(|child| format!("{}", egraph.id_to_expr(*child).pretty(100))).collect::<Vec<_>>().join(" ");
+            result.push_str(&node_expr_str);
+            result.push_str(")\n");
+        }
+        // // expr ids
+        // result.push_str(&format!("{}exprs:\n", " ".repeat(starting_space * 2)));
+        // let ids = egraph.lookup_expr_ids(&expr).unwrap_or_default();
+        // for expr_id in ids {
+        //     result.push_str(&format!("{}{}\n", " ".repeat(starting_space * 2), egraph.id_to_expr(expr_id).pretty(100)));
+        // }
     }
     result.trim().to_string()
+}
+
+fn get_equiv_exprs(egraph: &EGraph<ArithLanguage, ObsEquiv>, expr: &RecExpr<ArithLanguage>) -> Vec<RecExpr<ArithLanguage>> {
+    println!("<get_equiv_exprs> representative expr: {}", expr.pretty(100));
+    let mut exprs = vec![];
+    if let Some(id) = egraph.lookup_expr(expr) {
+        let eclass = &egraph[id];
+        exprs.push(expr.clone());
+        for node in &eclass.nodes {
+            println!("<get_equiv_exprs> node: {:?}", node);
+            let build_expr = |id| egraph[id].nodes[0].clone();
+            // TODO: Fix the bug in build_recexpr method
+            // let recexpr = node.build_recexpr(build_expr);
+            // println!("<get_equiv_exprs> recexpr: {}", recexpr.pretty(100));
+            // exprs.push(recexpr);
+        }
+    }
+    exprs
 }
 
 fn merge_egraphs<L: Language, N: Analysis<L>>(source_egraph: &EGraph<L, N>, target_egraph: &mut EGraph<L, N>) {
