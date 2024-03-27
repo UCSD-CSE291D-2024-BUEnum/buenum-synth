@@ -225,11 +225,23 @@ impl<'a> Enumerator<'a> {
         // TODO: construct another egraph using all the possible expr in one egraph? (Non-incremental)
         // TODO: split eclasses by certain standard, enodes eval to the same value will be in the new same eclass, one is retained as orignal, the other are newly created.
         let mut new_egraph = EGraph::new(ObsEquiv { pts: pts.clone() }).with_explanations_enabled();
-        for (key, exprs) in &self.cache {
+        for eclass in self.egraph.classes() {  // level = 1
+            let mut exprs = HashSet::new();
+            // collect all exprs in the eclass
+            for node in &eclass.nodes {
+                let expr = node.join_recexprs(|id| self.egraph.id_to_expr(id));
+                exprs.insert(expr);
+            }
+            // TODO: cannot build new cache because of the `prod_name` required in the key
+            // add all exprs to the new egraph
             for expr in exprs {
-                new_egraph.add_expr(expr);
+                new_egraph.add_expr(&expr);
             }
         }
+        // let exprs_set = collect_all_equivs(&self.egraph); // level = 10
+        // for expr in exprs_set {
+        //     new_egraph.add_expr(&expr);
+        // }
         self.merge_equivs();
         new_egraph.rebuild();
         self.egraph = new_egraph;
@@ -799,6 +811,30 @@ fn get_equiv_exprs(egraph: &EGraph<ArithLanguage, ObsEquiv>, expr: &RecExpr<Arit
         }
     }
     exprs
+}
+
+fn collect_all_equivs(egraph: &EGraph<ArithLanguage, ObsEquiv>) -> HashSet<RecExpr<ArithLanguage>> {
+    let mut exprs_set = HashSet::new();
+    for eclass in egraph.classes() {
+        collect_all_equivs_rec(egraph, eclass.id, &mut exprs_set, 0);
+    }
+    exprs_set
+}
+
+
+
+fn collect_all_equivs_rec(egraph: &EGraph<ArithLanguage, ObsEquiv>, root_id: Id, exprs_set: &mut HashSet<RecExpr<ArithLanguage>>, level: usize) {
+    if level > 10 {
+        return;
+    }
+    let eclass = &egraph[root_id];
+    for node in &eclass.nodes {
+        let new_expr = node.join_recexprs(|id| egraph.id_to_expr(id));
+        exprs_set.insert(new_expr.clone());
+        for id in node.children() {
+            collect_all_equivs_rec(egraph, *id, exprs_set, level + 1);
+        }
+    }
 }
 
 fn merge_egraphs<L: Language, N: Analysis<L>>(source_egraph: &EGraph<L, N>, target_egraph: &mut EGraph<L, N>) {
