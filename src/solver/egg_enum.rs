@@ -308,11 +308,18 @@ impl<'a> Enumerator<'a> {
     fn merge_equivs(&mut self) {
         let equivs = self.collect_equivs();
         // merge those equivs
+        // println!("<Enumerator::merge_equivs> equivs.keys().len(): {}", equivs.keys().len());
         for (k, v) in equivs {
+            // println!("<Enumerator::merge_equivs> data: {:?}", k.iter().map(|t| t.1).collect::<Vec<_>>());
             let mut iter = v.into_iter();
             if let Some(first) = iter.next() {
+                // println!("<Enumerator::merge_equivs> first id: {}", first);
+                // println!("<Enumerator::merge_equivs> eclass({})(nodes.len = {}): {:?}", first, self.egraph[first].nodes.len(), self.egraph[first]);
                 for id in iter {
+                    // println!("<Enumerator::merge_equivs> id: {}", id);
+                    // println!("<Enumerator::merge_equivs> eclass({})(nodes.len = {}): {:?}", id, self.egraph[id].nodes.len(), self.egraph[id]);
                     self.egraph.union(first, id);
+                    // println!("<Enumerator::merge_equivs> eclass after union({})(nodes.len = {}): {:?}", first, self.egraph[first].nodes.len(), self.egraph[first]);
                 }
             }
         }
@@ -469,7 +476,7 @@ impl<'a> Enumerator<'a> {
         //     }
         //     self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
         // }
-        self.merge_equivs();
+        // self.merge_equivs();
         self.egraph.rebuild();
 
         println!("{}", pretty_cache(&self.cache, 2));
@@ -573,10 +580,15 @@ impl EggSolver {
                 // use equiv_exprs to get all equivalent expressions
                 let equivs = get_equiv_exprs(&enumerator.egraph, expr);
                 println!("<EggSolver::synthesize> Expr: {:?} has {} equivs", expr.pretty(100), equivs.len());
-                for equiv in &equivs {
-                    // println!("<EggSolver::synthesize> equiv: {}", equiv.pretty(100));
-                }
+                // let equivs_more = equivs.iter().fold(HashSet::new(), |mut acc, equiv| {
+                //     acc.extend(get_equiv_exprs(&enumerator.egraph, equiv));
+                //     acc
+                // });
+                // for equiv in &equivs {
+                //     // println!("<EggSolver::synthesize> equiv: {}", equiv.pretty(100));
+                // }
                 equiv_exprs.extend(equivs);
+                // equiv_exprs.extend(equivs_more);
             }
             exprs = equiv_exprs.into_iter().collect::<Vec<_>>();
             println!("<EggSolver::synthesize> Total synthesized exprs: {}", exprs.len());
@@ -780,6 +792,7 @@ fn get_equiv_exprs(egraph: &EGraph<ArithLanguage, ObsEquiv>, expr: &RecExpr<Arit
         // println!("<get_equiv_exprs> eclass: {:?}", eclass);
         for node in &eclass.nodes {
             // println!("<get_equiv_exprs> node: {:?}", node); // type: &ArithLanguage
+            // TODO: not only build from the representative expr, but also from other nodes in the eclass
             let new_expr = node.join_recexprs(|id| egraph.id_to_expr(id));
             // println!("<get_equiv_exprs> new_expr: {}", new_expr.pretty(100));
             exprs.push(new_expr);
