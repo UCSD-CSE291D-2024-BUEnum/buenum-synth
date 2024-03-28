@@ -1,12 +1,14 @@
 use std::cmp::max;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 use async_std::task::{self, yield_now};
 
 use cfg::earley::grammar;
 use egg::{rewrite as rw, *};
 use indexmap::IndexSet;
-use itertools::Itertools;
+use itertools::{enumerate, Itertools};
+
+use crate::parser::ast::Expr;
 
 define_language! {
     pub enum ArithLanguage {
@@ -348,6 +350,14 @@ impl<'a> Enumerator<'a> {
         }
         return HashSet::new();
     }
+    fn get_all_exprs_from_ecache(&self, key: ExprAstSize) -> HashSet<RecExpr<ArithLanguage>> {
+        let exprs = collect_all_equivs2(&self.egraph_cache, key);
+        for expr in &exprs {
+            println!("<Enumerator::get_all_exprs_from_ecache> expr: {:?}", expr.pretty(100));
+        }
+        exprs
+    }
+    
     fn exists_in_egraph(&self, expr: &RecExpr<ArithLanguage>) -> bool {
         let id = self.egraph.lookup_expr(expr);
         id.is_some()
@@ -485,7 +495,7 @@ impl<'a> Enumerator<'a> {
                                     // let mut left_expr_parts = self.cache
                                     //     .get(&(prod.lhs.clone(), left_size)).cloned().unwrap_or_default()
                                     //     .into_iter().collect::<Vec<_>>();
-                                    let left_expr_parts = self.get_exprs_from_ecache((prod.lhs.clone(), left_size))
+                                    let left_expr_parts = self.get_all_exprs_from_ecache(ExprAstSize { ast_size: left_size, prod_name: prod.lhs.clone() })
                                         .into_iter().collect::<Vec<_>>();
                                     println!("<Enumerator::grow> left_expr_parts.len(): {}", left_expr_parts.len());
                                     // for entry in &new_expressions {
@@ -498,7 +508,7 @@ impl<'a> Enumerator<'a> {
                                     // let mut right_expr_parts = self.cache
                                     //     .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
                                     //     .into_iter().collect::<Vec<_>>();
-                                    let right_expr_parts = self.get_exprs_from_ecache((prod.lhs.clone(), right_size))
+                                    let right_expr_parts = self.get_all_exprs_from_ecache(ExprAstSize { ast_size: right_size, prod_name: prod.lhs.clone() })
                                         .into_iter().collect::<Vec<_>>();
                                     println!("<Enumerator::grow> right_expr_parts.len(): {}", right_expr_parts.len());
                                     // for entry in &new_expressions {
@@ -548,7 +558,7 @@ impl<'a> Enumerator<'a> {
                                 // let mut right_expr_parts = self.cache
                                 //     .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
                                 //     .into_iter().collect::<Vec<_>>();
-                                let right_expr_parts = self.get_exprs_from_ecache((prod.lhs.clone(), right_size))
+                                let right_expr_parts = self.get_all_exprs_from_ecache(ExprAstSize { ast_size: right_size, prod_name: prod.lhs.clone() })
                                     .into_iter().collect::<Vec<_>>();
                                 println!("<Enumerator::grow> right_expr_parts.len(): {}", right_expr_parts.len());
                                 // for entry in &new_expressions {
@@ -974,7 +984,87 @@ fn collect_all_equivs_rec(egraph: &EGraph<ArithLanguage, ObsEquiv>, root_id: Id,
         }
     }
 }
+fn collect_all_equivs2(egraph: &EGraph<ArithLanguage, ExprAstSize>, key: ExprAstSize) -> HashSet<RecExpr<ArithLanguage>> {
+    let mut exprs_set = HashSet::new();
+    for eclass in egraph.classes() {
+        let ExprAstSize { ast_size, prod_name } = &egraph[eclass.id].data;
+        if ast_size != &key.ast_size || prod_name != &key.prod_name {
+            continue;
+        }
+        println!("<collect_all_equivs2> ast_size: {:?}", ast_size);
+        collect_all_equivs_rec2(egraph, eclass.id, &mut exprs_set);
+    }
+    for expr in &exprs_set {
+        println!("<collect_all_equivs2> expr: {}", expr.pretty(100));
+    }
+    exprs_set
+}
 
+// fn collect_all_equivs_rec2(egraph: &EGraph<ArithLanguage, ExprAstSize>, root_id: Id, exprs_set: &mut HashSet<RecExpr<ArithLanguage>>) {
+//     // starting from root_id, we should collect all possible expr combinations
+//     let eclass = &egraph[root_id];
+//     for node in &eclass.nodes {
+//         // each of the node in the root_id is a starting point, so we can start a while loop here
+//         // each time, we need to collect language construct into a vector, then build expr on top of that
+//         // for example, `let mut lcs = vec![]; lcs.push(the leaf level lc); lcs.push(the next level lc, which may refer to the index of previous nodes); ...`
+//         // then, we can build expr from the lcs
+
+//         // However, what makes it difficult is that, we want to collect all possible combinations of combinations
+//         // for example, for all the exprs with (S, 3), we should have a top level Neg/Add/Sub/Mul, then sub tree constructed by either two <0> eclasses (for binary op), which consists of singleton nodes (leaves), or by <6> eclass, and all its possible subtrees
+//         // This may need to be achieved by recursive function, or a post-order traversal using stack.
+//     }
+// }
+fn collect_all_equivs_rec2(egraph: &EGraph<ArithLanguage, ExprAstSize>, root_id: Id, exprs_set: &mut HashSet<RecExpr<ArithLanguage>>) {
+    let eclass = &egraph[root_id];
+    for node in &eclass.nodes {
+        let mut stack = VecDeque::new();
+        stack.push_back((node.clone(), vec![]));
+
+        while let Some((curr_node, curr_lcs)) = stack.pop_back() {
+            let children = curr_node.children();
+
+            if children.is_empty() {
+                // TODO: Manipulation for leaf nodes
+                // Add the current node to curr_lcs
+                // Create a RecExpr from curr_lcs and insert it into exprs_set
+                let mut curr_lcs = curr_lcs;
+                curr_lcs.push(curr_node.clone());
+                exprs_set.insert(RecExpr::from(curr_lcs));
+            } else {
+                let mut child_combinations = vec![vec![]];
+
+                for child_id in children {
+                    let child_eclass = &egraph[*child_id];
+                    let mut child_lcs = vec![];
+
+                    for child_node in &child_eclass.nodes {
+                        let mut child_stack = VecDeque::new();
+                        child_stack.push_back((child_node.clone(), vec![]));
+
+                        while let Some((child_curr_node, child_curr_lcs)) = child_stack.pop_back() {
+                            let child_children = child_curr_node.children();
+
+                            if child_children.is_empty() {
+                                // TODO: Manipulation for child leaf nodes
+                                // Add the child_curr_node to child_curr_lcs
+                                // Push child_curr_lcs to child_lcs
+                            } else {
+                                // TODO: Manipulation for child non-leaf nodes
+                                // Iterate over child_children and create new child_curr_lcs
+                                // Push (child_curr_node, new_child_lcs) to child_stack
+                            }
+                        }
+                    }
+
+                    // TODO: Generate new combinations using child_lcs and update child_combinations
+                }
+
+                // TODO: Iterate over child_combinations and create new nodes using map_children
+                // Push the new nodes to new_lcs and update the stack with (curr_node, new_lcs)
+            }
+        }
+    }
+}
 fn merge_egraphs<L: Language, N: Analysis<L>>(source_egraph: &EGraph<L, N>, target_egraph: &mut EGraph<L, N>) {
     for id in source_egraph.classes().map(|e| e.id) {
         let expr = source_egraph.id_to_expr(id);
