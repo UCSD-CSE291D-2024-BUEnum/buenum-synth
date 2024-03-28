@@ -334,7 +334,20 @@ impl<'a> Enumerator<'a> {
     //     self.merge_equivs();
     //     self.egraph.rebuild();
     // }
-
+    fn get_exprs_from_ecache(&self, key: (ProdName, usize)) -> HashSet<RecExpr<ArithLanguage>> {
+        for eclass in self.egraph_cache.classes() {
+            let ExprAstSize { ast_size, prod_name } = eclass.data.clone();
+            if prod_name == key.0 && ast_size == key.1 {
+                let mut exprs = HashSet::new();
+                for node in &eclass.nodes {
+                    let expr = node.join_recexprs(|id| self.egraph_cache.id_to_expr(id));
+                    exprs.insert(expr);
+                }
+                return exprs;
+            }
+        }
+        return HashSet::new();
+    }
     fn exists_in_egraph(&self, expr: &RecExpr<ArithLanguage>) -> bool {
         let id = self.egraph.lookup_expr(expr);
         id.is_some()
@@ -419,7 +432,7 @@ impl<'a> Enumerator<'a> {
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
                         println!("<Enumerator::grow> prod(size={}): ({}, {}) => {:?}", size, prod.lhs, prod.lhs_type, lang_construct);
-                        let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
+                        // let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
                         match lang_construct {
                             ArithLanguage::Num(_) | ArithLanguage::Var(_) => {
                                 // Logically, this is not sufficient, because the eclass may contains some equivalent expressions
@@ -437,21 +450,21 @@ impl<'a> Enumerator<'a> {
                                 // let expr =  lang_construct.join_recexprs(|_| old_expr_iter.next().unwrap());
                                 // println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
 
-                                new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
-                                               .or_insert_with(HashSet::new)
-                                               .insert(expr);
+                                // new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
+                                //                .or_insert_with(HashSet::new)
+                                //                .insert(expr);
                             },
                             _ => {}
                         }
                         // self.merge_equivs();
                         // self.egraph.rebuild();
-                        for (key, exprs) in new_expressions {
-                            // for expr in &exprs {
-                            //     self.egraph.add_expr(&expr);
-                            // }
-                            // let exprs = exprs.into_iter().filter(|expr| !self.exists_in_egraph(expr) || !self.exists_in_cache(&key)).collect::<Vec<_>>();
-                            self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
-                        }
+                        // for (key, exprs) in new_expressions {
+                        //     // for expr in &exprs {
+                        //     //     self.egraph.add_expr(&expr);
+                        //     // }
+                        //     // let exprs = exprs.into_iter().filter(|expr| !self.exists_in_egraph(expr) || !self.exists_in_cache(&key)).collect::<Vec<_>>();
+                        //     self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
+                        // }
                     }
                 }
             }
@@ -461,33 +474,39 @@ impl<'a> Enumerator<'a> {
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
                         println!("<Enumerator::grow> prod(size={}): ({}, {}) => {:?}", size, prod.lhs, prod.lhs_type, lang_construct);
-                        let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
+                        // let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
                         match lang_construct {
                             ArithLanguage::Add(_) | ArithLanguage::Sub(_) | ArithLanguage::Mul(_) => {
                                 let num_nonterminals = lang_construct.children().len();
                                 for left_size in 1..(size-1) {
                                     let right_size = (size-1) - left_size;
-                                    // println!("<Enumerator::grow> left_size: {}, right_size: {}", left_size, right_size);
+                                    println!("<Enumerator::grow> left_size: {}, right_size: {}", left_size, right_size);
 
-                                    let mut left_expr_parts = self.cache
-                                        .get(&(prod.lhs.clone(), left_size)).cloned().unwrap_or_default()
+                                    // let mut left_expr_parts = self.cache
+                                    //     .get(&(prod.lhs.clone(), left_size)).cloned().unwrap_or_default()
+                                    //     .into_iter().collect::<Vec<_>>();
+                                    let left_expr_parts = self.get_exprs_from_ecache((prod.lhs.clone(), left_size))
                                         .into_iter().collect::<Vec<_>>();
-                                    for entry in &new_expressions {
-                                        let ((prod_name, expr_size), exprs) = entry;
-                                        if prod_name == &prod.lhs && expr_size == &left_size {
-                                            left_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
-                                        }
-                                    }
+                                    println!("<Enumerator::grow> left_expr_parts.len(): {}", left_expr_parts.len());
+                                    // for entry in &new_expressions {
+                                    //     let ((prod_name, expr_size), exprs) = entry;
+                                    //     if prod_name == &prod.lhs && expr_size == &left_size {
+                                    //         left_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
+                                    //     }
+                                    // }
 
-                                    let mut right_expr_parts = self.cache
-                                        .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
+                                    // let mut right_expr_parts = self.cache
+                                    //     .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
+                                    //     .into_iter().collect::<Vec<_>>();
+                                    let right_expr_parts = self.get_exprs_from_ecache((prod.lhs.clone(), right_size))
                                         .into_iter().collect::<Vec<_>>();
-                                    for entry in &new_expressions {
-                                        let ((prod_name, expr_size), exprs) = entry;
-                                        if prod_name == &prod.lhs && expr_size == &right_size {
-                                            right_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
-                                        }
-                                    }
+                                    println!("<Enumerator::grow> right_expr_parts.len(): {}", right_expr_parts.len());
+                                    // for entry in &new_expressions {
+                                    //     let ((prod_name, expr_size), exprs) = entry;
+                                    //     if prod_name == &prod.lhs && expr_size == &right_size {
+                                    //         right_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
+                                    //     }
+                                    // }
 
                                     for left_expr in &left_expr_parts {
                                         for right_expr in &right_expr_parts {
@@ -515,9 +534,9 @@ impl<'a> Enumerator<'a> {
                                             let id = self.egraph_cache.add_expr(&expr);
                                             self.egraph_cache.set_analysis_data(id, ExprAstSize { ast_size: AstSize.cost_rec(&expr), prod_name: prod.lhs.clone() });
 
-                                            new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
-                                                           .or_insert_with(HashSet::new)
-                                                           .insert(expr);
+                                            // new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
+                                            //                .or_insert_with(HashSet::new)
+                                            //                .insert(expr);
                                         }
                                     }
                                 }
@@ -526,15 +545,18 @@ impl<'a> Enumerator<'a> {
                                 let right_size = size - 1;
                                 // println!("<Enumerator::grow> right_size: {}", right_size);
 
-                                let mut right_expr_parts = self.cache
-                                    .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
+                                // let mut right_expr_parts = self.cache
+                                //     .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
+                                //     .into_iter().collect::<Vec<_>>();
+                                let right_expr_parts = self.get_exprs_from_ecache((prod.lhs.clone(), right_size))
                                     .into_iter().collect::<Vec<_>>();
-                                for entry in &new_expressions {
-                                    let ((prod_name, expr_size), exprs) = entry;
-                                    if prod_name == &prod.lhs && expr_size == &right_size {
-                                        right_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
-                                    }
-                                } // This is necessary, otherwise, some exprs will be never taken into consideration due to the laziness
+                                println!("<Enumerator::grow> right_expr_parts.len(): {}", right_expr_parts.len());
+                                // for entry in &new_expressions {
+                                //     let ((prod_name, expr_size), exprs) = entry;
+                                //     if prod_name == &prod.lhs && expr_size == &right_size {
+                                //         right_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
+                                //     }
+                                // } // This is necessary, otherwise, some exprs will be never taken into consideration due to the laziness
                                 for right_expr in &right_expr_parts {
                                     let right_id = self.egraph.add_expr(right_expr);
                                     // let (id, expr) = self.egraph.add_with_recexpr_return(ArithLanguage::Neg([right_id]));
@@ -546,9 +568,9 @@ impl<'a> Enumerator<'a> {
                                     let id = self.egraph_cache.add_expr(&expr);
                                     self.egraph_cache.set_analysis_data(id, ExprAstSize { ast_size: AstSize.cost_rec(&expr), prod_name: prod.lhs.clone() });
 
-                                    new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
-                                                   .or_insert_with(HashSet::new)
-                                                   .insert(expr);
+                                    // new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
+                                    //                .or_insert_with(HashSet::new)
+                                    //                .insert(expr);
                                 }
                             },
                             _ => {}
@@ -556,13 +578,13 @@ impl<'a> Enumerator<'a> {
                         // println!("<Enumerator::grow> new_expressions<({}, {})>.len(): {}", prod.lhs, size, new_expressions.values().flatten().count());
                         // self.merge_equivs();
                         // self.egraph.rebuild();
-                        for (key, exprs) in new_expressions {
-                            // for expr in &exprs {
-                            //     self.egraph.add_expr(&expr);
-                            // }
-                            // let exprs = exprs.into_iter().filter(|expr| !self.exists_in_egraph(expr) || !self.exists_in_cache(&key)).collect::<Vec<_>>();
-                            self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
-                        }
+                        // for (key, exprs) in new_expressions {
+                        //     // for expr in &exprs {
+                        //     //     self.egraph.add_expr(&expr);
+                        //     // }
+                        //     // let exprs = exprs.into_iter().filter(|expr| !self.exists_in_egraph(expr) || !self.exists_in_cache(&key)).collect::<Vec<_>>();
+                        //     self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
+                        // }
                         // task::yield_now().await;
                     }
                 }
@@ -600,17 +622,19 @@ impl<'a> Enumerator<'a> {
                 println!("<Enumerator::enumerate> Growing to size: {}", self.current_size + 1);
                 self.grow()/*.await*/;
                 println!("<Enumerator::enumerate> Finished growing to size: {}", self.current_size);
-                println!("<Enumerator::enumerate> Cache size: {}", self.cache.values().flatten().count());
+                println!("<Enumerator::enumerate> ECache size: {}", self.egraph_cache.total_size());
                 println!("<Enumerator::enumerate> EGraph size: {}", self.egraph.total_size());
                 println!("<Enumerator::enumerate> EGraph nodes: {}", self.egraph.total_number_of_nodes());
                 println!("<Enumerator::enumerate> EGraph classes: {}", self.egraph.number_of_classes());
             }
             let start_nonterminal = &self.grammar.productions.first().unwrap().lhs;
-            let cache_max_size = self.cache.iter().map(|(k, _)| k.1).max().unwrap();
-            let exprs = self.cache.iter().filter(|(k, _)| &k.0 == start_nonterminal && k.1 <= cache_max_size).map(|(_, v)| v).flatten().collect::<Vec<_>>();
+            // let cache_max_size = self.cache.iter().map(|(k, _)| k.1).max().unwrap();
+            let ecache_max_size = self.egraph_cache.classes().map(|eclass| eclass.data.ast_size).max().unwrap();
+            // let exprs = self.cache.iter().filter(|(k, _)| &k.0 == start_nonterminal && k.1 <= cache_max_size).map(|(_, v)| v).flatten().collect::<Vec<_>>();
+            let exprs = self.get_exprs_from_ecache((start_nonterminal.clone(), ecache_max_size));
             result.clear();
             for expr in exprs {
-                if self.satisfies_pts(expr, pts) {
+                if self.satisfies_pts(&expr, pts) {
                     // println!("<Enumerator::enumerate> expr: {:?} satisfies pts: {:?}", expr.pretty(100), pts);
                     result.push(expr.clone());
                 }
