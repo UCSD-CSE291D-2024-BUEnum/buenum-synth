@@ -224,6 +224,7 @@ impl<'a> Enumerator<'a> {
     fn rebuild(&mut self, pts: &IOPairs) {
         // TODO: construct another egraph using all the possible expr in one egraph? (Non-incremental)
         // TODO: split eclasses by certain standard, enodes eval to the same value will be in the new same eclass, one is retained as orignal, the other are newly created.
+        let start = std::time::Instant::now();
         let mut new_egraph = EGraph::new(ObsEquiv { pts: pts.clone() }).with_explanations_enabled();
         for eclass in self.egraph.classes() {  // level = 1
             let mut exprs = HashSet::new();
@@ -245,6 +246,7 @@ impl<'a> Enumerator<'a> {
         self.merge_equivs();
         new_egraph.rebuild();
         self.egraph = new_egraph;
+        println!("<Enumerator::rebuild> Time elapsed: {:?}", start.elapsed().as_secs_f64());
     }
 
     // fn rebuild(&mut self, pts: &IOPairs) {
@@ -318,6 +320,7 @@ impl<'a> Enumerator<'a> {
     }
 
     fn merge_equivs(&mut self) {
+        let start = std::time::Instant::now();
         let equivs = self.collect_equivs();
         // merge those equivs
         // println!("<Enumerator::merge_equivs> equivs.keys().len(): {}", equivs.keys().len());
@@ -335,9 +338,11 @@ impl<'a> Enumerator<'a> {
                 }
             }
         }
+        println!("<Enumerator::merge_equivs> Time elapsed: {:?}", start.elapsed().as_secs_f64());
     }
 
     /* async */ fn grow(&mut self) {
+        let start = std::time::Instant::now();
         let size = self.current_size + 1;
         // Base case: directly add numbers and variables for size 1
         if size == 1 {
@@ -350,14 +355,14 @@ impl<'a> Enumerator<'a> {
                             ArithLanguage::Num(_) | ArithLanguage::Var(_) => {
                                 // Logically, this is not sufficient, because the eclass may contains some equivalent expressions
                                 // but this is the leave node, so it's fine.
-                                
+
                                 // let (id, expr) = self.egraph.add_with_recexpr_return(lang_construct.clone());
                                 let id = self.egraph.add(lang_construct.clone());
                                 let expr = self.egraph.id_to_expr(id);
                                 // let mut old_expr_iter = [lang_construct.clone()].into_iter();
                                 // let mut old_expr_iter = [left_expr.clone(), right_expr.clone()].into_iter();
                                 // let expr =  lang_construct.join_recexprs(|_| old_expr_iter.next().unwrap());
-                                println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
+                                // println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
                                 
                                 new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                .or_insert_with(HashSet::new)
@@ -432,7 +437,7 @@ impl<'a> Enumerator<'a> {
 
                                             let mut old_expr_iter = [left_expr.clone(), right_expr.clone()].into_iter();
                                             let expr = lang_construct.join_recexprs(|id| old_expr_iter.next().unwrap());
-                                            println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
+                                            // println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
 
                                             new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                            .or_insert_with(HashSet::new)
@@ -443,6 +448,7 @@ impl<'a> Enumerator<'a> {
                             },
                             ArithLanguage::Neg(_) => {
                                 let right_size = size - 1;
+                                // println!("<Enumerator::grow> right_size: {}", right_size);
                                 
                                 let mut right_expr_parts = self.cache
                                     .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
@@ -459,7 +465,7 @@ impl<'a> Enumerator<'a> {
                                     let id = self.egraph.add(ArithLanguage::Neg([right_id]));
                                     // let expr = self.egraph.id_to_expr(id);
                                     let expr = lang_construct.join_recexprs(|_| right_expr.clone());
-                                    println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
+                                    // println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
 
                                     new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                    .or_insert_with(HashSet::new)
@@ -493,9 +499,10 @@ impl<'a> Enumerator<'a> {
         self.merge_equivs();
         self.egraph.rebuild();
 
-        println!("{}", pretty_cache(&self.cache, 2));
-        println!("{}", pretty_egraph(&self.egraph, 2));
+        // println!("{}", pretty_cache(&self.cache, 2));
+        // println!("{}", pretty_egraph(&self.egraph, 2));
         self.current_size = size;
+        println!("<Enumerator::grow> Time elapsed: {:?}", start.elapsed().as_secs_f64());
     }
 
 
@@ -626,9 +633,9 @@ impl EggSolver {
             }
             if !exprs_sat.is_empty() {
                 // target found
-                println!("{}", pretty_cache(&enumerator.cache, 2));
+                // println!("{}", pretty_cache(&enumerator.cache, 2));
                 // println!("{}", pretty_egraph(&enumerator.egraph, 2));
-                // println!("Time elapsed: {:?}", start.elapsed());
+                // println!("Time elapsed: {:?}", start.elapsed().as_secs_f64());
                 return exprs_sat;
             }
             if !exprs.is_empty() {
@@ -680,7 +687,9 @@ fn pretty_op(op: &ArithLanguage, ends: bool) -> String {
 fn pretty_cache(cache: &HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>, starting_space: usize)  -> String {
     let mut result = String::new();
     result.push_str("Cache:\n");
+    let cache = cache.into_iter().sorted_by(|(k1, _), (k2, _)| Ord::cmp(k1, k2));
     for (key, exprs) in cache {
+        let exprs = exprs.into_iter().sorted_by(|e1, e2| Ord::cmp(&AstSize.cost_rec(e1), &AstSize.cost_rec(e2)));
         for expr in exprs {
             // println!("[{}, {}]: {}", &key.0, &key.1, expr.pretty(100));
             // println!("{}[{}, {}]: {}", " ".repeat(starting_space), &key.0, &key.1, expr.pretty(100));
@@ -912,7 +921,7 @@ async fn main() {
         ]
     };
     let solver = EggSolver::new(grammar.clone());
-    let max_size = 20;
+    let max_size = 9;
 
     let start = std::time::Instant::now();
     let pts = vec![
@@ -1006,7 +1015,7 @@ mod tests {
             productions: vec![
                 Production {
                     lhs: "S".to_string(),
-                    lhs_type: "Op".to_string(),
+                    lhs_type: "Var".to_string(),
                     rhs: vec![
                         ProdComponent::LanguageConstruct(ArithLanguage::Var("x".to_string())),
                         ProdComponent::LanguageConstruct(ArithLanguage::Var("y".to_string())),
@@ -1015,23 +1024,19 @@ mod tests {
                 },
                 Production {
                     lhs: "S".to_string(),
-                    lhs_type: "Op".to_string(),
+                    lhs_type: "Const".to_string(),
                     rhs: vec![
                         ProdComponent::LanguageConstruct(ArithLanguage::Num(0)),
-                    ]
-                },
-                Production {
-                    lhs: "S".to_string(),
-                    lhs_type: "Op".to_string(),
-                    rhs: vec![
                         ProdComponent::LanguageConstruct(ArithLanguage::Num(1)),
+                        ProdComponent::LanguageConstruct(ArithLanguage::Num(2)),
                     ]
                 },
                 Production {
                     lhs: "S".to_string(),
                     lhs_type: "Op".to_string(),
                     rhs: vec![
-                        ProdComponent::LanguageConstruct(ArithLanguage::Num(2)),
+                        ProdComponent::LanguageConstruct(ArithLanguage::Neg(Default::default())),
+                        ProdComponent::LhsName("S".to_string()),
                     ]
                 },
                 Production {
@@ -1066,13 +1071,14 @@ mod tests {
         let start = std::time::Instant::now();
         let solver = EggSolver::new(grammar.clone());
         let pts = vec![
-            // x + y - (x * (y - z) ) - 2 * z
+            // (x + (y - (x * (y - z)))) - 2 * z
+            // (- (+ x (- y (* x (- y z)) (* 2 z))
             (HashMap::from([("x".to_string(), 7), ("y".to_string(), 12), ("z".to_string(), 23)]), 50), // 7 + 12 - (7 * (12 - 23)) - 2 * 23 = 50
             (HashMap::from([("x".to_string(), 11), ("y".to_string(), 13), ("z".to_string(), 29)]), 142), // 11 + 13 - (11 * (13 - 29)) - 2 * 29 = 142
             (HashMap::from([("x".to_string(), 3), ("y".to_string(), 7), ("z".to_string(), 13)]), 2), // 3 + 7 - (3 * (7 - 13)) - 2 * 13 = 2
         ];
 
-        let max_size = 20;
+        let max_size = 9;
         let exprs = solver.synthesize(max_size, &pts)/*.await*/;
         if exprs.is_empty(){
             println!("No expression could be synthesized.");
