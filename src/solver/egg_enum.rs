@@ -62,6 +62,12 @@ struct Grammar {
 struct ObsEquiv {
     pts: IOPairs,
 }
+
+#[derive(Default, Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
+struct ExprAstSize {
+    ast_size: usize,
+    prod_name: String,
+}
 // struct OperatorCostFn;
 
 // impl CostFunction<ArithLanguage> for OperatorCostFn {
@@ -78,7 +84,7 @@ struct ObsEquiv {
 //             ArithLanguage::Mul(_) => -3.0,
 //             ArithLanguage::Neg(_) => -1.5,
 //         };
-        
+
 //         let children_cost: f64 = enode.fold(0.0, |sum, id| sum + costs(id));
 //         op_cost + children_cost
 //     }
@@ -96,7 +102,7 @@ struct ObsEquiv {
 //         C: FnMut(Id) -> Self::Cost,
 //     {
 //         let mut variables:HashSet<String> = HashSet::new();
-        
+
 //         let variety_cost = match enode {
 //             ArithLanguage::Num(_) => -1.0,
 //             ArithLanguage::Var(name) => {
@@ -112,7 +118,7 @@ struct ObsEquiv {
 //             sum + child_cost
 //         });
 
-//         // variety_cost + children_cost + 
+//         // variety_cost + children_cost +
 //         -(variables.len() as f64)
 //     }
 // }
@@ -197,26 +203,57 @@ impl Analysis<ArithLanguage> for ObsEquiv {
     }
 }
 
+impl Analysis<ArithLanguage> for ExprAstSize {
+    type Data = ExprAstSize;
+
+    fn merge(&mut self, to: &mut Self::Data, from: Self::Data) -> DidMerge {
+        let merged = to.ast_size == from.ast_size;
+        if merged {
+            *to = from;
+        }
+        DidMerge(merged, false)
+    }
+
+    fn make(egraph: &EGraph<ArithLanguage, Self>, enode: &ArithLanguage) -> Self::Data {
+        // println!("<ExprAstSize::make> enode: {:?}", enode);
+        if let Some(id) = egraph.lookup(enode.clone()) {
+            let ExprAstSize { ast_size, prod_name} = egraph[id].data.clone();
+            ExprAstSize { ast_size, prod_name }
+        } else {
+            let ast_size = match enode {
+                ArithLanguage::Num(_) | ArithLanguage::Var(_) => 1,
+                ArithLanguage::Neg([id]) => egraph[*id].data.ast_size + 1,
+                ArithLanguage::Add([a, b]) | ArithLanguage::Sub([a, b]) | ArithLanguage::Mul([a, b]) => {
+                    egraph[*a].data.ast_size + egraph[*b].data.ast_size + 1
+                },
+            };
+            let prod_name = "PLACE_HOLDER".to_string();
+            ExprAstSize { ast_size, prod_name }
+        }
+    }
+    fn modify(egraph: &mut EGraph<ArithLanguage, Self>, id: Id) {
+        // We don't need to do anything here because the data consistency is guaranteed by the `enumerator.rebuild()`.
+    }
+}
+
 // TODO: Can we use e-matching to obtain certain size of expressions?
 // I think we can use AstSize somewhere.
 // Can we connect data with certain e-node, rather than e-class? In this way, we can keep track of expr size.
 struct Enumerator<'a> {
-    old_egraphs: Vec<EGraph<ArithLanguage, ObsEquiv>>,
     grammar: &'a Grammar,
     egraph: EGraph<ArithLanguage, ObsEquiv>,
     cache: HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>,
-    checked_exprs: HashSet<RecExpr<ArithLanguage>>,
+    egraph_cache: EGraph<ArithLanguage, ExprAstSize>,
     current_size: usize,
 }
 
 impl<'a> Enumerator<'a> {
     fn new(grammar: &'a Grammar) -> Self {
         Enumerator {
-            old_egraphs: Vec::new(),
             grammar,
             egraph: EGraph::new(ObsEquiv::default()).with_explanations_enabled(),
             cache: HashMap::new(),
-            checked_exprs: HashSet::new(),
+            egraph_cache: EGraph::new(ExprAstSize::default()).with_explanations_enabled(),
             current_size: 0,
         }
     }
@@ -297,13 +334,14 @@ impl<'a> Enumerator<'a> {
     //     self.merge_equivs();
     //     self.egraph.rebuild();
     // }
-    
+
     fn exists_in_egraph(&self, expr: &RecExpr<ArithLanguage>) -> bool {
         let id = self.egraph.lookup_expr(expr);
         id.is_some()
     }
     fn exists_in_cache(&self, key: &(ProdName, usize)) -> bool {
-        self.cache.contains_key(key)
+        // self.cache.contains_key(key)
+        false
     }
     fn collect_equivs(&self) -> HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> {
         let mut equivs: HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> = HashMap::new();
@@ -319,6 +357,15 @@ impl<'a> Enumerator<'a> {
         equivs
     }
 
+    fn collect_equivs_ecache(&self) -> HashMap<ExprAstSize, HashSet<Id>> {
+        let mut equivs = HashMap::new();
+        for eclass in self.egraph_cache.classes() {
+            let data = eclass.data.clone();
+            let key = data;
+            equivs.entry(key).or_insert(HashSet::new()).insert(eclass.id);
+        }
+        equivs
+    }
     fn merge_equivs(&mut self) {
         let start = std::time::Instant::now();
         let equivs = self.collect_equivs();
@@ -334,6 +381,28 @@ impl<'a> Enumerator<'a> {
                     // println!("<Enumerator::merge_equivs> id: {}", id);
                     // println!("<Enumerator::merge_equivs> eclass({})(nodes.len = {}): {:?}", id, self.egraph[id].nodes.len(), self.egraph[id]);
                     self.egraph.union(first, id);
+                    // println!("<Enumerator::merge_equivs> eclass after union({})(nodes.len = {}): {:?}", first, self.egraph[first].nodes.len(), self.egraph[first]);
+                }
+            }
+        }
+        println!("<Enumerator::merge_equivs> Time elapsed: {:?}", start.elapsed().as_secs_f64());
+    }
+
+    fn merge_equivs_ecache(&mut self) {
+        let start = std::time::Instant::now();
+        let equivs = self.collect_equivs_ecache();
+        // merge those equivs
+        // println!("<Enumerator::merge_equivs> equivs.keys().len(): {}", equivs.keys().len());
+        for (k, v) in equivs {
+            // println!("<Enumerator::merge_equivs> data: {:?}", k.iter().map(|t| t.1).collect::<Vec<_>>());
+            let mut iter = v.into_iter();
+            if let Some(first) = iter.next() {
+                // println!("<Enumerator::merge_equivs> first id: {}", first);
+                // println!("<Enumerator::merge_equivs> eclass({})(nodes.len = {}): {:?}", first, self.egraph[first].nodes.len(), self.egraph[first]);
+                for id in iter {
+                    // println!("<Enumerator::merge_equivs> id: {}", id);
+                    // println!("<Enumerator::merge_equivs> eclass({})(nodes.len = {}): {:?}", id, self.egraph[id].nodes.len(), self.egraph[id]);
+                    self.egraph_cache.union(first, id);
                     // println!("<Enumerator::merge_equivs> eclass after union({})(nodes.len = {}): {:?}", first, self.egraph[first].nodes.len(), self.egraph[first]);
                 }
             }
@@ -359,11 +428,15 @@ impl<'a> Enumerator<'a> {
                                 // let (id, expr) = self.egraph.add_with_recexpr_return(lang_construct.clone());
                                 let id = self.egraph.add(lang_construct.clone());
                                 let expr = self.egraph.id_to_expr(id);
+
+                                let id = self.egraph_cache.add_expr(&expr);
+                                self.egraph_cache.set_analysis_data(id, ExprAstSize { ast_size: 1, prod_name: prod.lhs.clone() });
+
                                 // let mut old_expr_iter = [lang_construct.clone()].into_iter();
                                 // let mut old_expr_iter = [left_expr.clone(), right_expr.clone()].into_iter();
                                 // let expr =  lang_construct.join_recexprs(|_| old_expr_iter.next().unwrap());
                                 // println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
-                                
+
                                 new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                .or_insert_with(HashSet::new)
                                                .insert(expr);
@@ -400,7 +473,7 @@ impl<'a> Enumerator<'a> {
                                         .get(&(prod.lhs.clone(), left_size)).cloned().unwrap_or_default()
                                         .into_iter().collect::<Vec<_>>();
                                     for entry in &new_expressions {
-                                        let ((prod_name, expr_size), exprs) = entry; 
+                                        let ((prod_name, expr_size), exprs) = entry;
                                         if prod_name == &prod.lhs && expr_size == &left_size {
                                             left_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
                                         }
@@ -410,7 +483,7 @@ impl<'a> Enumerator<'a> {
                                         .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
                                         .into_iter().collect::<Vec<_>>();
                                     for entry in &new_expressions {
-                                        let ((prod_name, expr_size), exprs) = entry; 
+                                        let ((prod_name, expr_size), exprs) = entry;
                                         if prod_name == &prod.lhs && expr_size == &right_size {
                                             right_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
                                         }
@@ -439,6 +512,9 @@ impl<'a> Enumerator<'a> {
                                             let expr = lang_construct.join_recexprs(|id| old_expr_iter.next().unwrap());
                                             // println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
 
+                                            let id = self.egraph_cache.add_expr(&expr);
+                                            self.egraph_cache.set_analysis_data(id, ExprAstSize { ast_size: AstSize.cost_rec(&expr), prod_name: prod.lhs.clone() });
+
                                             new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                            .or_insert_with(HashSet::new)
                                                            .insert(expr);
@@ -449,12 +525,12 @@ impl<'a> Enumerator<'a> {
                             ArithLanguage::Neg(_) => {
                                 let right_size = size - 1;
                                 // println!("<Enumerator::grow> right_size: {}", right_size);
-                                
+
                                 let mut right_expr_parts = self.cache
                                     .get(&(prod.lhs.clone(), right_size)).cloned().unwrap_or_default()
                                     .into_iter().collect::<Vec<_>>();
                                 for entry in &new_expressions {
-                                    let ((prod_name, expr_size), exprs) = entry; 
+                                    let ((prod_name, expr_size), exprs) = entry;
                                     if prod_name == &prod.lhs && expr_size == &right_size {
                                         right_expr_parts.extend(exprs.iter().cloned().collect::<Vec<_>>());
                                     }
@@ -466,6 +542,9 @@ impl<'a> Enumerator<'a> {
                                     // let expr = self.egraph.id_to_expr(id);
                                     let expr = lang_construct.join_recexprs(|_| right_expr.clone());
                                     // println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
+
+                                    let id = self.egraph_cache.add_expr(&expr);
+                                    self.egraph_cache.set_analysis_data(id, ExprAstSize { ast_size: AstSize.cost_rec(&expr), prod_name: prod.lhs.clone() });
 
                                     new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                    .or_insert_with(HashSet::new)
@@ -497,10 +576,12 @@ impl<'a> Enumerator<'a> {
         //     self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
         // }
         self.merge_equivs();
+        self.merge_equivs_ecache();
         self.egraph.rebuild();
 
         // println!("{}", pretty_cache(&self.cache, 2));
         // println!("{}", pretty_egraph(&self.egraph, 2));
+        println!("<Enumerator::grow> Pretty egraph_cache: {}", pretty_egraph_cache(&self.egraph_cache, 2));
         self.current_size = size;
         println!("<Enumerator::grow> Time elapsed: {:?}", start.elapsed().as_secs_f64());
     }
@@ -730,7 +811,29 @@ fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize
     result.trim().to_string()
 }
 
-fn _build_recexpr<F>(root: &ArithLanguage, mut get_node: F) -> Option<RecExpr<ArithLanguage>> 
+fn pretty_egraph_cache(egraph: &EGraph<ArithLanguage, ExprAstSize>, starting_space: usize) -> String {
+    let mut result = String::new();
+    result.push_str("EGraph Cache:\n");
+    for eclass in egraph.classes() {
+        let expr = egraph.id_to_expr(eclass.id);
+        let ExprAstSize { ast_size, prod_name } = &egraph[eclass.id].data;
+        result.push_str(&format!("{}<{}>: ({}, {}) => [{}]\n", " ".repeat(starting_space), eclass.id, prod_name, ast_size, expr.pretty(100)));
+        
+        // Nodes
+        result.push_str(&format!("{}<nodes>:\n", " ".repeat(starting_space * 2)));
+        let align_space = eclass.nodes.iter().map(|node| format!("{:?}", node)).map(|s| s.len()).max().unwrap_or_default();
+        for node in &eclass.nodes {
+            let node_str = format!("{:?}", node);
+            result.push_str(&format!("{}{}:", " ".repeat(starting_space * 3), node_str));
+            result.push_str(" ".repeat(align_space + 1 - node_str.len()).as_str());
+            let child_expr = node.join_recexprs(|id| egraph.id_to_expr(id));
+            result.push_str(&format!("{}\n", child_expr.pretty(100)));
+        }
+    }
+    result.trim().to_string()
+}
+
+fn _build_recexpr<F>(root: &ArithLanguage, mut get_node: F) -> Option<RecExpr<ArithLanguage>>
 where F: FnMut(Id) -> Option<ArithLanguage>
 {
     let mut set = IndexSet::<ArithLanguage>::default();
@@ -981,7 +1084,7 @@ async fn main() {
         (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4), ("z".to_string(), 5)]), 17), // 3 * 4 + 5 = 17
         (HashMap::from([("x".to_string(), 4), ("y".to_string(), 11), ("z".to_string(), 2)]), 46), // 4 * 11 + 2 = 46
     ];
-    
+
     let exprs = solver.synthesize(max_size, &pts);
     if exprs.is_empty(){
         println!("No expression could be synthesized.");
