@@ -348,13 +348,17 @@ impl<'a> Enumerator<'a> {
                         let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
                         match lang_construct {
                             ArithLanguage::Num(_) | ArithLanguage::Var(_) => {
-                                let id = self.egraph.add(lang_construct.clone());
+                                // Logically, this is not sufficient, because the eclass may contains some equivalent expressions
+                                // but this is the leave node, so it's fine.
                                 
-                                // let var_extractor = Extractor::new(&self.egraph, VarietyCostFn { egraph: &self.egraph });
-                                // let (var_cost, var_best_expr) = var_extractor.find_best(id);
-                                // let expr = var_best_expr /*self.egraph.id_to_expr(id)*/;
-
+                                // let (id, expr) = self.egraph.add_with_recexpr_return(lang_construct.clone());
+                                let id = self.egraph.add(lang_construct.clone());
                                 let expr = self.egraph.id_to_expr(id);
+                                // let mut old_expr_iter = [lang_construct.clone()].into_iter();
+                                // let mut old_expr_iter = [left_expr.clone(), right_expr.clone()].into_iter();
+                                // let expr =  lang_construct.join_recexprs(|_| old_expr_iter.next().unwrap());
+                                println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
+                                
                                 new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                .or_insert_with(HashSet::new)
                                                .insert(expr);
@@ -412,7 +416,7 @@ impl<'a> Enumerator<'a> {
                                             // println!("<Enumerator::grow> op: {:?}, left_expr: {:?}, right_expr: {:?}", pretty_op(lang_construct), left_expr.pretty(100), right_expr.pretty(100));
                                             let left_id = self.egraph.add_expr(left_expr);
                                             let right_id = self.egraph.add_expr(right_expr);
-                            
+
                                             let id = match lang_construct {
                                                 ArithLanguage::Add(_) => {
                                                     self.egraph.add(ArithLanguage::Add([left_id, right_id]))
@@ -426,11 +430,10 @@ impl<'a> Enumerator<'a> {
                                                 _ => unreachable!(),
                                             };
 
-                                            // let var_extractor = Extractor::new(&self.egraph, VarietyCostFn { egraph: &self.egraph });
-                                            // let (var_cost, var_best_expr) = var_extractor.find_best(id);
-                                            // let expr = var_best_expr /*self.egraph.id_to_expr(id)*/;
+                                            let mut old_expr_iter = [left_expr.clone(), right_expr.clone()].into_iter();
+                                            let expr = lang_construct.join_recexprs(|id| old_expr_iter.next().unwrap());
+                                            println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
 
-                                            let expr = self.egraph.id_to_expr(id);
                                             new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                            .or_insert_with(HashSet::new)
                                                            .insert(expr);
@@ -452,13 +455,12 @@ impl<'a> Enumerator<'a> {
                                 } // This is necessary, otherwise, some exprs will be never taken into consideration due to the laziness
                                 for right_expr in &right_expr_parts {
                                     let right_id = self.egraph.add_expr(right_expr);
+                                    // let (id, expr) = self.egraph.add_with_recexpr_return(ArithLanguage::Neg([right_id]));
                                     let id = self.egraph.add(ArithLanguage::Neg([right_id]));
+                                    // let expr = self.egraph.id_to_expr(id);
+                                    let expr = lang_construct.join_recexprs(|_| right_expr.clone());
+                                    println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
 
-                                    // let var_extractor = Extractor::new(&self.egraph, VarietyCostFn { egraph: &self.egraph });
-                                    // let (var_cost, var_best_expr) = var_extractor.find_best(id);
-                                    // let expr = var_best_expr /*self.egraph.id_to_expr(id)*/; 
-                                   
-                                    let expr = self.egraph.id_to_expr(id);
                                     new_expressions.entry((prod.lhs.clone(), AstSize.cost_rec(&expr)))
                                                    .or_insert_with(HashSet::new)
                                                    .insert(expr);
@@ -488,7 +490,7 @@ impl<'a> Enumerator<'a> {
         //     }
         //     self.cache.entry(key).or_insert_with(HashSet::new).extend(exprs);
         // }
-        // self.merge_equivs();
+        self.merge_equivs();
         self.egraph.rebuild();
 
         println!("{}", pretty_cache(&self.cache, 2));
