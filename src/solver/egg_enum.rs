@@ -10,6 +10,8 @@ use itertools::{enumerate, Itertools};
 
 use crate::parser::ast::Expr;
 
+const EGG_ENUM_MAX_SIZE: usize = 9;
+
 define_language! {
     pub enum ArithLanguage {
         Num(i32),
@@ -607,12 +609,12 @@ impl<'a> Enumerator<'a> {
             }
             if !result.is_empty() {
                 println!("<Enumerator::enumerate> Found {} expressions that satisfy pts: {:?}", result.len(), pts);
-                break;
+                for expr in &result {
+                    println!("<Enumerator::enumerate> expr: {:?}", expr.pretty(100));
+                }
+                return result;
             } else {
                 println!("<Enumerator::enumerate> No expressions satisfy pts: {:?}", pts);
-            }
-            for expr in &result {
-                println!("<Enumerator::enumerate> expr: {:?}", expr.pretty(100));
             }
             if self.current_size == size {
                 break;
@@ -1174,7 +1176,6 @@ async fn main() {
         ]
     };
     let solver = EggSolver::new(grammar.clone());
-    let max_size = 9;
 
     let start = std::time::Instant::now();
     let pts = vec![
@@ -1226,7 +1227,6 @@ async fn main() {
             ]
         },
     );
-    let max_size = 5;
     let start = std::time::Instant::now();
     let solver = EggSolver::new(grammar.clone());
     let pts = vec![
@@ -1235,7 +1235,7 @@ async fn main() {
         (HashMap::from([("x".to_string(), 4), ("y".to_string(), 11), ("z".to_string(), 2)]), 46), // 4 * 11 + 2 = 46
     ];
 
-    let exprs = solver.synthesize(max_size, &pts);
+    let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts);
     if exprs.is_empty(){
         println!("No expression could be synthesized.");
         assert!(false);
@@ -1258,7 +1258,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_egg_enum() {
+    fn test_pbe_egs_enum() {
         main();
     }
 
@@ -1331,8 +1331,7 @@ mod tests {
             (HashMap::from([("x".to_string(), 3), ("y".to_string(), 7), ("z".to_string(), 13)]), 2), // 3 + 7 - (3 * (7 - 13)) - 2 * 13 = 2
         ];
 
-        let max_size = 9;
-        let exprs = solver.synthesize(max_size, &pts)/*.await*/;
+        let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts)/*.await*/;
         if exprs.is_empty(){
             println!("No expression could be synthesized.");
             assert!(false);
@@ -1411,8 +1410,6 @@ mod tests {
             ]
         };
         let solver = EggSolver::new(grammar.clone());
-        let max_size = 7;
-
 
         let start = std::time::Instant::now();
         let pts = vec![
@@ -1425,7 +1422,7 @@ mod tests {
             (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 14), // 2 * 6 + 2 = 14
         ];
 
-        let exprs = solver.synthesize(max_size, &pts);
+        let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts);
         if exprs.is_empty(){
             println!("No expression could be synthesized.");
             assert!(false);
@@ -1451,7 +1448,7 @@ mod tests {
             (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 18), // 6 * 2 + 6 = 18
         ];
 
-        let exprs = solver.synthesize(max_size, &pts)/*.await*/;
+        let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts)/*.await*/;
         if exprs.is_empty(){
             println!("No expression could be synthesized.");
             assert!(false);
@@ -1475,7 +1472,7 @@ mod tests {
             (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 7), // 5 * 3 - 5 - 3 = 7
         ];
 
-        let exprs = solver.synthesize(max_size, &pts)/*.await*/;
+        let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts)/*.await*/;
         if exprs.is_empty(){
             println!("No expression could be synthesized.");
             assert!(false);
@@ -1498,7 +1495,8 @@ mod tests {
             (HashMap::from([("x".to_string(), 29), ("y".to_string(), 23)]), 232), // 4 * (4 - 1) + 2 * 4 = 10
             (HashMap::from([("x".to_string(), 2338), ("y".to_string(), 293)]), 4785886), // 2338 * (2338 - 293) + 2 * 2338 = 4785886
         ];
-        let exprs = solver.synthesize(max_size, &pts)/*.await*/;
+
+        let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts)/*.await*/;
         if exprs.is_empty(){
             println!("No expression could be synthesized.");
             assert!(false);
