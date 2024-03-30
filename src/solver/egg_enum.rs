@@ -298,76 +298,20 @@ impl<'a> Enumerator<'a> {
         println!("<Enumerator::rebuild> Time elapsed: {:?}", start.elapsed().as_secs_f64());
     }
 
-    // fn rebuild(&mut self, pts: &IOPairs) {
-    //     let mut inconsistent_eclasses = HashSet::new();
-    //     // Identify inconsistent eclasses
-    //     for (key, exprs) in &self.cache {
-    //         for expr in exprs {
-    //             let id = self.egraph.add_expr(expr);
-    //             let eclass = &self.egraph[id];
-
-    //             let mut output = HashSet::new();
-    //             for (inputs, _) in pts {
-    //                 for node in &eclass.nodes {
-    //                     if let Some((i, o)) = ObsEquiv::make(&self.egraph, node).iter().find(|(i, _)| i == inputs) {
-    //                         output.insert(*o);
-    //                     }
-    //                     if output.len() > 1 {
-    //                         break;
-    //                     }
-    //                 }
-    //                 if output.len() > 1 {
-    //                     inconsistent_eclasses.insert(id);
-    //                     break;
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     let new_egraph = EGraph::new(ObsEquiv { pts: pts.clone() }).with_explanations_enabled();
-    //     let mut old_egraph = std::mem::replace(&mut self.egraph, new_egraph);
-
-    //     // Add consistent eclasses to the new egraph
-    //     for (key, exprs) in &self.cache {
-    //         for expr in exprs {
-    //             let id = old_egraph.add_expr(expr);
-    //             if !inconsistent_eclasses.contains(&id) {
-    //                 self.egraph.add_expr(expr);
-    //             }
-    //         }
-    //     }
-    //     // Add inconsistent eclasses to the new egraph
-    //     for id in inconsistent_eclasses {
-    //         for node in &old_egraph[id].nodes {
-    //             let new_id = self.egraph.add(node.clone());
-    //         }
-    //     }
-    //     // Merge equivalent expressions in the new egraph
-    //     self.merge_equivs();
-    //     self.egraph.rebuild();
-    // }
-    // fn get_exprs_from_ecache(&self, key: (ProdName, usize)) -> HashSet<RecExpr<ArithLanguage>> {
-    //     for eclass in self.ecache.classes() {
-    //         let ExprAstSize { ast_size, prod_name } = eclass.data.clone();
-    //         if prod_name == key.0 && ast_size == key.1 {
-    //             let mut exprs = HashSet::new();
-    //             for node in &eclass.nodes {
-    //                 let expr = node.join_recexprs(|id| self.ecache.id_to_expr(id));
-    //                 exprs.insert(expr);
-    //             }
-    //             return exprs;
-    //         }
-    //     }
-    //     return HashSet::new();
-    // }
     fn get_all_exprs_from_ecache(&self, key: ExprAstSize) -> HashSet<RecExpr<ArithLanguage>> {
         // println!("<Enumerator::get_all_exprs_from_ecache> key: {:?}", key);
         let exprs = collect_all_equivs2(&self.ecache, key);
-        let exprs = exprs.into_iter().sorted_by(|a, b| a.pretty(100).cmp(&b.pretty(100))).collect::<Vec<_>>();
-        for expr in &exprs {
-            // println!("<Enumerator::get_all_exprs_from_ecache> expr: {:?}", expr.pretty(100));
+        exprs
+    }
+
+    fn get_sat_exprs_from_egraph(&self, pts: &IOPairs) -> Vec<RecExpr<ArithLanguage>> {
+        let mut result: Vec<RecExpr<ArithLanguage>> = vec![];
+        for eclass in self.egraph.classes() {
+            if eclass.data.iter().all(|(i, o)| pts.contains(&(i.clone(), *o))) {
+                result.push(self.egraph.id_to_expr(eclass.id));
+            }
         }
-        exprs.into_iter().collect()
+        result
     }
     
     fn exists_in_egraph(&self, expr: &RecExpr<ArithLanguage>) -> bool {
@@ -652,11 +596,8 @@ impl<'a> Enumerator<'a> {
                 println!("<Enumerator::enumerate> EGraph classes: {}", self.egraph.number_of_classes());
             }
             let start_nonterminal = &self.grammar.productions.first().unwrap().lhs;
-            // let cache_max_size = self.cache.iter().map(|(k, _)| k.1).max().unwrap();
             let ecache_max_size = self.ecache.classes().map(|eclass| eclass.data.ast_size).max().unwrap();
-            // let exprs = self.cache.iter().filter(|(k, _)| &k.0 == start_nonterminal && k.1 <= cache_max_size).map(|(_, v)| v).flatten().collect::<Vec<_>>();
-            // let exprs = self.get_exprs_from_ecache((start_nonterminal.clone(), ecache_max_size));
-            let exprs = self.get_all_exprs_from_ecache(ExprAstSize { ast_size: ecache_max_size, prod_name: start_nonterminal.clone() });
+            let exprs = self.get_sat_exprs_from_egraph(pts);
             result.clear();
             for expr in exprs {
                 if self.satisfies_pts(&expr, pts) {
@@ -667,6 +608,8 @@ impl<'a> Enumerator<'a> {
             if !result.is_empty() {
                 println!("<Enumerator::enumerate> Found {} expressions that satisfy pts: {:?}", result.len(), pts);
                 break;
+            } else {
+                println!("<Enumerator::enumerate> No expressions satisfy pts: {:?}", pts);
             }
             for expr in &result {
                 println!("<Enumerator::enumerate> expr: {:?}", expr.pretty(100));
@@ -999,7 +942,6 @@ fn collect_all_equivs_rec(egraph: &EGraph<ArithLanguage, ObsEquiv>, root_id: Id,
 }
 
 fn collect_all_equivs2(egraph: &EGraph<ArithLanguage, ExprAstSize>, key: ExprAstSize) -> HashSet<RecExpr<ArithLanguage>> {
-    let mut visited_set = HashSet::new();
     let mut exprs_set = HashSet::new();
     for eclass in egraph.classes() {
         let ExprAstSize { ast_size, prod_name } = &egraph[eclass.id].data;
@@ -1008,13 +950,13 @@ fn collect_all_equivs2(egraph: &EGraph<ArithLanguage, ExprAstSize>, key: ExprAst
         }
         // println!("<collect_all_equivs2> pretty_ecache(egraph, 2): {}", pretty_ecache(egraph, 2));
         // println!("<collect_all_equivs2> ast_size: {:?}", ast_size);
-        collect_all_equivs_rec2(egraph, eclass.id, &mut visited_set, &mut exprs_set);
+        collect_all_equivs_rec2(egraph, eclass.id, &mut exprs_set);
         // println!("<collect_all_equivs2> exprs_set.len(): {}", exprs_set.len());
     }
     exprs_set
 }
 
-fn collect_all_equivs_rec2(egraph: &EGraph<ArithLanguage, ExprAstSize>, root_id: Id, visited_set: &mut HashSet<(ExprAstSize, usize)>, exprs_set: &mut HashSet<RecExpr<ArithLanguage>>) {
+fn collect_all_equivs_rec2(egraph: &EGraph<ArithLanguage, ExprAstSize>, root_id: Id, exprs_set: &mut HashSet<RecExpr<ArithLanguage>>) {
     let eclass = &egraph[root_id];
     let mut expr_count = 0;
     for (i, node) in enumerate(&eclass.nodes) {
@@ -1023,7 +965,6 @@ fn collect_all_equivs_rec2(egraph: &EGraph<ArithLanguage, ExprAstSize>, root_id:
         if children.is_empty() {
             // leaf node
             // println!("<collect_all_equivs_rec2> leaf node: {:?}", node);
-            visited_set.insert((eclass.data.clone(), i));
             let lc = node.assign_ids(&[]);
             let lcs = vec![lc];
             let expr = RecExpr::from(lcs);
@@ -1036,7 +977,7 @@ fn collect_all_equivs_rec2(egraph: &EGraph<ArithLanguage, ExprAstSize>, root_id:
             let child = children[0];
             // println!("<collect_all_equivs_rec2> child: {:?}", child);
             let mut vec_lcs: Vec<Vec<ArithLanguage>> = vec![];
-            collect_all_subexprs(&egraph, &mut vec_lcs, &child, visited_set);
+            collect_all_subexprs(&egraph, &mut vec_lcs, &child);
             // now the vec_lcs is updated, we can convert it to exprs
             for lcs in vec_lcs {
                 let mut lcs = lcs;
@@ -1050,27 +991,23 @@ fn collect_all_equivs_rec2(egraph: &EGraph<ArithLanguage, ExprAstSize>, root_id:
                 exprs_set.insert(expr);
                 expr_count += 1;
             }
-            visited_set.insert((eclass.data.clone(), i));
         } else if children.len() == 2 {
             // binary op
             // println!("<collect_all_equivs_rec2> binary op: {:?}", node);
             let left_child = children[0];
             let mut vec_lcs_left: Vec<Vec<ArithLanguage>> = vec![];
-            let mut visited_set_left = visited_set.clone();
             // println!("<collect_all_equivs_rec2> binary op left start: {:?}", left_child);
-            collect_all_subexprs(&egraph, &mut vec_lcs_left, &left_child, &mut visited_set_left);
+            collect_all_subexprs(&egraph, &mut vec_lcs_left, &left_child);
             // println!("<collect_all_equivs_rec2> binary op left end: {:?}", vec_lcs_left);
             // now the vec_lcs is updated, we can convert it to exprs
             let right_child = children[1];
             let mut vec_lcs_right: Vec<Vec<ArithLanguage>> = vec![];
-            let mut visited_set_right = visited_set.clone();
             // println!("<collect_all_equivs_rec2> binary op right start: {:?}", right_child);
-            collect_all_subexprs(&egraph, &mut vec_lcs_right, &right_child, &mut visited_set_right);
+            collect_all_subexprs(&egraph, &mut vec_lcs_right, &right_child);
             // println!("<collect_all_equivs_rec2> binary op right end: {:?}", vec_lcs_right);
             // println!("<collect_all_equivs_rec2> right: {:?}", vec_lcs_right);
             // now the vec_lcs is updated, we can convert it to exprs
             // use cartesian product to get all possible combinations
-            visited_set.extend(visited_set_left.into_iter().chain(visited_set_right.into_iter()));
             for comb in vec_lcs_left.into_iter().cartesian_product(vec_lcs_right.into_iter()) {
                 let expr_left = RecExpr::from(comb.0);
                 let expr_right = RecExpr::from(comb.1);
@@ -1086,7 +1023,6 @@ fn collect_all_equivs_rec2(egraph: &EGraph<ArithLanguage, ExprAstSize>, root_id:
                 exprs_set.insert(expr);
                 expr_count += 1;
             }
-            visited_set.insert((eclass.data.clone(), i));
         } else {
             unreachable!("Language construct with more than 2 children");
         }
@@ -1094,20 +1030,15 @@ fn collect_all_equivs_rec2(egraph: &EGraph<ArithLanguage, ExprAstSize>, root_id:
     // println!("<collect_all_equivs_rec2> expr_count: {}", expr_count);
 }
 
-fn collect_all_subexprs(egraph: &EGraph<ArithLanguage, ExprAstSize>, vec_lcs: &mut Vec<Vec<ArithLanguage>>, child_id: &Id, visited_set: &mut HashSet<(ExprAstSize, usize)>) {
+fn collect_all_subexprs(egraph: &EGraph<ArithLanguage, ExprAstSize>, vec_lcs: &mut Vec<Vec<ArithLanguage>>, child_id: &Id) {
     let mut expr_count = 0;
     let child_eclass = &egraph[*child_id];
     for (i, child_node) in enumerate(&child_eclass.nodes) {
         let key = (child_eclass.data.clone(), i);
-        if visited_set.contains(&key) {
-            // continue;
-        }
-
         let child_children = child_node.children();
         if child_children.is_empty() {
             // leaf node
             // println!("<collect_all_subexprs> <{}> leaf node: {:?}", child_id, child_node);
-            visited_set.insert(key);
             let new_lc = child_node.assign_ids(&[]);
             let new_lcs = vec![new_lc];
             // println!("<collect_all_subexprs> <{}> new_lcs: {:?}", child_id, new_lcs);
@@ -1120,8 +1051,7 @@ fn collect_all_subexprs(egraph: &EGraph<ArithLanguage, ExprAstSize>, vec_lcs: &m
             // println!("<collect_all_subexprs> <{}> unary op: {:?}", child_id, child_node);
             let grandchild_id = child_children[0];
             let mut new_vec_lcs = vec![];
-            let mut visited_set_ = visited_set.clone();
-            collect_all_subexprs(egraph, &mut new_vec_lcs, &grandchild_id, &mut visited_set_);
+            collect_all_subexprs(egraph, &mut new_vec_lcs, &grandchild_id);
             for lcs in new_vec_lcs {
                 let mut new_lcs = lcs;
                 let new_lc_id = Id::from(new_lcs.len() - 1);
@@ -1137,19 +1067,16 @@ fn collect_all_subexprs(egraph: &EGraph<ArithLanguage, ExprAstSize>, vec_lcs: &m
             // println!("<collect_all_subexprs> <{}> binary op: {:?}", child_id, child_node);
             let left_grandchild_id = child_children[0];
             let mut new_vec_lcs_left = vec![];
-            let mut visited_set_left = visited_set.clone();
             // println!("<collect_all_subexprs> <{}> binary op left start: {:?}", child_id, left_grandchild_id);
-            collect_all_subexprs(egraph, &mut new_vec_lcs_left, &left_grandchild_id, &mut visited_set_left);
+            collect_all_subexprs(egraph, &mut new_vec_lcs_left, &left_grandchild_id);
             // println!("<collect_all_subexprs> <{}> binary op left end: {:?}", child_id, new_vec_lcs_left);
 
             let right_grandchild_id = child_children[1];
             let mut new_vec_lcs_right = vec![];
-            let mut visited_set_right = visited_set.clone();
             // println!("<collect_all_subexprs> <{}> binary op right start: {:?}", child_id, right_grandchild_id);
-            collect_all_subexprs(egraph, &mut new_vec_lcs_right, &right_grandchild_id, &mut visited_set_right);
+            collect_all_subexprs(egraph, &mut new_vec_lcs_right, &right_grandchild_id);
             // println!("<collect_all_subexprs> <{}> binary op right end: {:?}", child_id, new_vec_lcs_right);
 
-            visited_set.extend(visited_set_left.into_iter().chain(visited_set_right.into_iter()));
             for comb in new_vec_lcs_left.into_iter().cartesian_product(new_vec_lcs_right.into_iter()) {
                 let new_lc_left = comb.0;
                 let new_lc_right = comb.1;
@@ -1336,7 +1263,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pbd_egs_3() {
+    fn test_pbe_egs_3() {
         let grammar = Grammar {
             productions: vec![
                 Production {
