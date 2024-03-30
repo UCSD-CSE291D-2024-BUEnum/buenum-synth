@@ -24,19 +24,19 @@ define_language! {
 }
 impl ArithLanguage {
     // Credit to egsolver
-    pub fn semantics(&self) -> Box<dyn Fn(&[(HashMap<String, i32>, i32)]) -> i32 + '_> {
+    pub fn semantics(&self) -> Box<dyn Fn(&[IOPair]) -> i32 + '_> {
         match self {
             ArithLanguage::Num(n) => Box::new(move |_| *n),
             ArithLanguage::Var(name) => Box::new(move |env| {
                 env.iter()
-                    .find_map(|(input, _)| input.get(name))
-                    .cloned()
+                    // .find_map(|(input, _)| input.get(name))
+                    .find_map(|iopair| iopair.geti(name))
                     .unwrap_or(0)
             }),
-            ArithLanguage::Neg([_]) => Box::new(move |args| -args[0].1),
-            ArithLanguage::Add([_, _]) => Box::new(move |args| args[0].1 + args[1].1),
-            ArithLanguage::Sub([_, _]) => Box::new(move |args| args[0].1 - args[1].1),
-            ArithLanguage::Mul([_, _]) => Box::new(move |args| args[0].1 * args[1].1),
+            ArithLanguage::Neg([_]) => Box::new(move |args| -args[0].out),
+            ArithLanguage::Add([_, _]) => Box::new(move |args| args[0].out + args[1].out),
+            ArithLanguage::Sub([_, _]) => Box::new(move |args| args[0].out - args[1].out),
+            ArithLanguage::Mul([_, _]) => Box::new(move |args| args[0].out * args[1].out),
         }
     }
     pub fn assign_ids(&self, ids: &[Id]) -> Self {
@@ -51,8 +51,53 @@ impl ArithLanguage {
     }
 }
 type ProdName = String;
-type IOPairs = Vec<(HashMap<String, i32>, i32)>;
-type IOPairsRef<'a> = Vec<(&'a HashMap<String, i32> , i32)>;
+type IOPairs = Vec<IOPair>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IOPair {
+    ins: Vec<(String, i32)>,
+    out: i32,
+}
+
+impl IOPair {
+    fn geti(&self, name: &str) -> Option<i32> {
+        self.ins.iter().find_map(|(n, v)| if n == name { Some(*v) } else { None })
+    }
+}
+impl From<(&Vec<(String, i32)>, &i32)> for IOPair {
+    fn from(pair: (&Vec<(String, i32)>, &i32)) -> Self {
+        IOPair { ins: pair.0.clone(), out: *pair.1 }
+    }
+}
+impl From<(&Vec<(String, i32)>, i32)> for IOPair {
+    fn from(pair: (&Vec<(String, i32)>, i32)) -> Self {
+        IOPair { ins: pair.0.clone(), out: pair.1 }
+    }
+}
+impl From<(Vec<(String, i32)>, i32)> for IOPair {
+    fn from(pair: (Vec<(String, i32)>, i32)) -> Self {
+        IOPair { ins: pair.0, out: pair.1 }
+    }
+}
+impl From<(Vec<(String, i32)>, &i32)> for IOPair {
+    fn from(pair: (Vec<(String, i32)>, &i32)) -> Self {
+        IOPair { ins: pair.0, out: *pair.1 }
+    }
+}
+
+// From<(std::collections::HashMap<std::string::String, {integer}>, {integer})>
+impl From<(HashMap<String, i32>, i32)> for IOPair {
+    fn from(pair: (HashMap<String, i32>, i32)) -> Self {
+        let inputs = pair.0
+            .into_iter()
+            .sorted_by(|(k1, _), (k2, _)| k1.cmp(k2))
+            .collect();
+        let output = pair.1;
+        IOPair { ins: inputs, out: output }
+    }
+}
+
+type IOPairsRef<'a> = Vec<(&'a Vec<(String, i32)> , i32)>;
 
 #[derive(Debug, Clone)]
 struct Production {
@@ -74,7 +119,7 @@ struct Grammar {
 
 #[derive(Default, Debug, Clone)]
 struct ObsEquiv {
-    pts: IOPairs,
+    pts: Vec<IOPair>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
@@ -155,14 +200,14 @@ struct ExprAstSize {
 //    (1) fn eval(&self, egraph: &EGraph<ArithLanguage, ObsEquiv>, expr: &RecExpr<ArithLanguage>) -> i64
 // 3. Remove cache for storing all expressions, only store equivs, when the egraph eclasses split, new exprs will be added to the cache
 impl Analysis<ArithLanguage> for ObsEquiv {
-    type Data = IOPairs;
+    type Data = Vec<IOPair>;
 
     fn merge(&mut self, to: &mut Self::Data, from: Self::Data) -> DidMerge {
         // println!("<ObsEquiv::merge> to: {:?}, from: {:?}", to, from);
         let mut merged = false;
-        for (from_input, from_output) in from {
-            if !to.contains(&(from_input.clone(), from_output)) {
-                to.push((from_input, from_output));
+        for iopair in from {
+            if !to.contains(&iopair) {
+                to.push(iopair);
                 merged = true;
             }
         }
@@ -170,29 +215,35 @@ impl Analysis<ArithLanguage> for ObsEquiv {
     }
 
     fn make(egraph: &EGraph<ArithLanguage, Self>, enode: &ArithLanguage) -> Self::Data {
-        let pts: &Vec<(HashMap<String, i32>, i32)> = &egraph.analysis.pts;
+        let pts: &Vec<IOPair> = &egraph.analysis.pts;
         let sem = enode.semantics();
         let o = |i: &Id| &egraph[*i].data; // output
         match enode {
             // Constants
-            ArithLanguage::Num(n) => pts.iter().map(|(input, output)| (input.clone(), *n)).collect(),
+            ArithLanguage::Num(n) => pts.iter().map(|iopair| IOPair::from((iopair.ins.clone(), n))).collect(),
             // Varaibles
-            ArithLanguage::Var(name) => pts.iter().map(|(input, output)| (input.clone(), sem(&[(input.clone(), *input.get(name).unwrap())]))).collect(),
+            // ArithLanguage::Var(name) => pts.iter().map(|iopair | (input.clone(), sem(&[(input.clone(), *input.get(name).unwrap())]))).collect(),
+            ArithLanguage::Var(name) => pts.iter().map(|iopair| IOPair::from((iopair.ins.clone(), iopair.geti(name).unwrap()))).collect(),
             // Unary operators
             ArithLanguage::Neg([id]) => o(id)
                 .iter()
                 .zip(pts)
-                .map(|((input, output), _)| (input.clone(), sem(&[(input.clone(), *output)])))
+                // .map(|((input, output), _)| (input.clone(), sem(&[(input.clone(), *output)])))
+                .map(|iopairs| IOPair::from((iopairs.0.ins.clone(), sem(&[IOPair::from((iopairs.0.ins.clone(), iopairs.0.out))]))))
                 .collect(),
             // Binary operators
             ArithLanguage::Add([a, b]) | ArithLanguage::Sub([a, b]) | ArithLanguage::Mul([a, b]) => o(a)
                 .iter()
                 .zip(o(b))
                 .zip(pts)
-                .map(|(((input_a, output_a), (input_b, output_b)), _)| {
-                    let input = input_a.clone();
-                    let output = sem(&[(input_a.clone(), *output_a), (input_b.clone(), *output_b)]);
-                    (input, output)
+                // .map(|(((input_a, output_a), (input_b, output_b)), _)| {
+                //     let input = input_a.clone();
+                //     let output = sem(&[(input_a.clone(), *output_a), (input_b.clone(), *output_b)]);
+                //     (input, output)
+                .map(|((iopair_a, iopair_b), _)| {
+                    let input = iopair_a.ins.clone();
+                    let output = sem(&[IOPair::from((iopair_a.ins.clone(), iopair_a.out)), IOPair::from((iopair_b.ins.clone(), iopair_b.out))]);
+                    IOPair::from((input, output))
                 })
                 .collect(),
         }
@@ -272,7 +323,7 @@ impl<'a> Enumerator<'a> {
         }
     }
 
-    fn rebuild(&mut self, pts: &IOPairs) {
+    fn rebuild(&mut self, pts: &Vec<IOPair>) {
         // TODO: construct another egraph using all the possible expr in one egraph? (Non-incremental)
         // TODO: split eclasses by certain standard, enodes eval to the same value will be in the new same eclass, one is retained as orignal, the other are newly created.
         let start = std::time::Instant::now();
@@ -306,10 +357,10 @@ impl<'a> Enumerator<'a> {
         exprs
     }
 
-    fn get_sat_exprs_from_egraph(&self, pts: &IOPairs) -> Vec<RecExpr<ArithLanguage>> {
+    fn get_sat_exprs_from_egraph(&self, pts: &Vec<IOPair>) -> Vec<RecExpr<ArithLanguage>> {
         let mut result: Vec<RecExpr<ArithLanguage>> = vec![];
         for eclass in self.egraph.classes() {
-            if eclass.data.iter().all(|(i, o)| pts.contains(&(i.clone(), *o))) {
+            if eclass.data.iter().all(|iopair| pts.contains(iopair)) {
                 result.push(self.egraph.id_to_expr(eclass.id));
             }
         }
@@ -324,13 +375,18 @@ impl<'a> Enumerator<'a> {
         // self.cache.contains_key(key)
         false
     }
-    fn collect_equivs(&self) -> HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> {
-        let mut equivs: HashMap<Vec<(Vec<(String, i32)>, i32)>, HashSet<Id>> = HashMap::new();
+    fn collect_equivs(&self) -> HashMap<Vec<IOPair>, HashSet<Id>> {
+        let mut equivs: HashMap<Vec<IOPair>, HashSet<Id>> = HashMap::new();
         for eclass in self.egraph.classes() {
-            let data: Vec<(Vec<(String, i32)>, i32)> = eclass.data.iter().map(|(i, o)| {
-                let mut vec: Vec<(String, i32)> = i.clone().into_iter().collect();
-                vec.sort();
-                (vec, *o)
+            // let data: Vec<(Vec<(String, i32)>, i32)> = eclass.data.iter().map(|(i, o)| {
+            //     let mut vec: Vec<(String, i32)> = i.clone().into_iter().collect();
+            //     vec.sort();
+            //     (vec, *o)
+            // }).collect::<Vec<_>>();
+            let data: Vec<IOPair> = eclass.data.iter().map(|iopair| {
+                let mut ins: Vec<(String, i32)> = iopair.ins.clone();
+                ins.sort();
+                IOPair::from((ins, iopair.out))
             }).collect::<Vec<_>>();
             let key = data;
             equivs.entry(key).or_insert(HashSet::new()).insert(eclass.id);
@@ -398,7 +454,7 @@ impl<'a> Enumerator<'a> {
             for prod in &self.grammar.productions {
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
-                        println!("<Enumerator::grow> prod(size={}): ({}, {}) => {:?}", size, prod.lhs, prod.lhs_type, lang_construct);
+                        // println!("<Enumerator::grow> prod(size={}): ({}, {}) => {:?}", size, prod.lhs, prod.lhs_type, lang_construct);
                         // let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
                         match lang_construct {
                             ArithLanguage::Num(_) | ArithLanguage::Var(_) => {
@@ -441,7 +497,7 @@ impl<'a> Enumerator<'a> {
             for prod in &self.grammar.productions {
                 for component in &prod.rhs {
                     if let ProdComponent::LanguageConstruct(lang_construct) = component {
-                        println!("<Enumerator::grow> prod(size={}): ({}, {}) => {:?}", size, prod.lhs, prod.lhs_type, lang_construct);
+                        // println!("<Enumerator::grow> prod(size={}): ({}, {}) => {:?}", size, prod.lhs, prod.lhs_type, lang_construct);
                         // let mut new_expressions: HashMap<(String, usize), HashSet<RecExpr<ArithLanguage>>> = HashMap::new();
                         match lang_construct {
                             ArithLanguage::Add(_) | ArithLanguage::Sub(_) | ArithLanguage::Mul(_) => {
@@ -579,7 +635,7 @@ impl<'a> Enumerator<'a> {
     }
 
 
-    /* async */fn enumerate(&mut self, size: usize, pts: &IOPairs) -> Vec<RecExpr<ArithLanguage>> {
+    /* async */fn enumerate(&mut self, size: usize, pts: &Vec<IOPair>) -> Vec<RecExpr<ArithLanguage>> {
         if self.egraph.analysis.pts.len() != pts.len() {
             // println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}", self.egraph.analysis.pts);
             self.rebuild(pts);
@@ -624,9 +680,9 @@ impl<'a> Enumerator<'a> {
     }
 
 
-    fn satisfies_pts(&self, expr: &RecExpr<ArithLanguage>, pts: &IOPairs) -> bool {
+    fn satisfies_pts(&self, expr: &RecExpr<ArithLanguage>, pts: &Vec<IOPair>) -> bool {
         // println!("<Enumerator::satisfies_pts> expr: {:?}", expr.pretty(100));
-        if pts.is_empty() || pts.first().unwrap().0.is_empty() {
+        if pts.is_empty() || pts.first().unwrap().ins.is_empty() {
             return true;
         }
         let mut egraph = EGraph::new(ObsEquiv { pts: pts.clone() }).with_explanations_enabled();
@@ -639,8 +695,16 @@ impl<'a> Enumerator<'a> {
         //     println!("<Enumerator::satisfies_pts> pts: {:?}", pts);
         // }
         let mut result = true;
-        for (inputs, output) in pts {
-            if egraph[id].data.iter().any(|(i, o)| &i == &inputs && &o == &output) {
+        // for (inputs, output) in pts {
+        //     if egraph[id].data.iter().any(|(i, o)| &i == &inputs && &o == &output) {
+        //         result &= true;
+        //     } else {
+        //         result &= false;
+        //         break;
+        //     }
+        // }
+        for iopair in pts {
+            if egraph[id].data.contains(iopair) {
                 result &= true;
             } else {
                 result &= false;
@@ -660,7 +724,7 @@ impl EggSolver {
         EggSolver { grammar }
     }
 
-    /*async */fn synthesize(&self, max_size: usize, pts_all: &IOPairs) -> Vec<RecExpr<ArithLanguage>> {
+    /*async */fn synthesize(&self, max_size: usize, pts_all: &Vec<IOPair>) -> Vec<RecExpr<ArithLanguage>> {
         let mut enumerator = Enumerator::new(&self.grammar);
         let mut pts = vec![];
         let start = std::time::Instant::now();
@@ -721,11 +785,12 @@ impl EggSolver {
         vec![]
     }
 
-    fn verify(&self, expr: &RecExpr<ArithLanguage>, pts_all: &IOPairs) -> Option<(HashMap<String, i32>, i32)> {
+    fn verify(&self, expr: &RecExpr<ArithLanguage>, pts_all: &Vec<IOPair>) -> Option<IOPair> {
         // println!("<EggSolver::verify> expr: {:?} = {:?}", expr.pretty(100), expr);
-        for (inputs, expected_output) in pts_all {
+        // for (inputs, expected_output) in pts_all {
+        for expected_iopair in pts_all {
             // println!("<EggSolver::verify> inputs: {:?}, expected_output: {:?}", inputs, expected_output);
-            let mut egraph = EGraph::new(ObsEquiv { pts: vec![(inputs.clone(), *expected_output)] }).with_explanations_enabled();
+            let mut egraph = EGraph::new(ObsEquiv { pts: vec![expected_iopair.clone()] }).with_explanations_enabled();
             let expr = expr.clone();
             // println!("<EggSolver::verify> pretty_egraph: {}", pretty_egraph(&egraph, 2));
             let id = egraph.add_expr(&expr);
@@ -733,10 +798,10 @@ impl EggSolver {
             // println!("{}", pretty_egraph(&egraph, 2));
             egraph.rebuild();
             // println!("<EggSolver::verify> egraph[id].data: {:?}", egraph[id].data);
-            let actual_output = egraph[id].data[0].1;
+            let actual_output = egraph[id].data[0].out;
             // println!("<EggSolver::verify> actual_output: {:?}", actual_output);
-            if actual_output != *expected_output {
-                return Some((inputs.clone(), *expected_output));
+            if actual_output != expected_iopair.out {
+                return Some(expected_iopair.clone());
             }
         }
         None
@@ -779,11 +844,12 @@ fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize
     result.push_str("EGraph:\n");
     for eclass in egraph.classes() {
         let expr = egraph.id_to_expr(eclass.id);
-        result.push_str(&format!("{}<{}>: [{}] -> {:?}\n", " ".repeat(starting_space), eclass.id, expr.pretty(100), egraph[eclass.id].data.iter().map(| (inputs, output) | output).collect::<Vec<_>>()));
+        result.push_str(&format!("{}<{}>: [{}] -> {:?}\n", " ".repeat(starting_space), eclass.id, expr.pretty(100), egraph[eclass.id].data.iter().map(|iopair | iopair.out).collect::<Vec<_>>()));
         // Data
         result.push_str(&format!("{}<data>:\n", " ".repeat(starting_space * 2)));
-        for (inputs, output) in &egraph[eclass.id].data {
-            result.push_str(&format!("{}[{}] -> {}\n", " ".repeat(starting_space * 3), inputs.iter().sorted().map(|(k, v)| format!("{}: {}", k, v)).collect::<Vec<_>>().join(", "), output));
+        // for (inputs, output) in &egraph[eclass.id].data {
+        for iopair in &egraph[eclass.id].data {
+            result.push_str(&format!("{}[{}] -> {}\n", " ".repeat(starting_space * 3), iopair.ins.iter().sorted().map(|(k, v)| format!("{}: {}", k, v)).collect::<Vec<_>>().join(", "), iopair.out));
         }
         // Nodes
         result.push_str(&format!("{}<nodes>:\n", " ".repeat(starting_space * 2)));
@@ -1233,7 +1299,9 @@ async fn main() {
         (HashMap::from([("x".to_string(), 1), ("y".to_string(), 2), ("z".to_string(), 3)]), 5), // 1 * 2 + 3 = 5
         (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4), ("z".to_string(), 5)]), 17), // 3 * 4 + 5 = 17
         (HashMap::from([("x".to_string(), 4), ("y".to_string(), 11), ("z".to_string(), 2)]), 46), // 4 * 11 + 2 = 46
-    ];
+    ].into_iter().map(|(inputs, output)| {
+        IOPair::from((inputs, output))
+    }).collect();
 
     let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts);
     if exprs.is_empty(){
@@ -1329,7 +1397,8 @@ mod tests {
             (HashMap::from([("x".to_string(), 7), ("y".to_string(), 12), ("z".to_string(), 23)]), 50), // 7 + 12 - (7 * (12 - 23)) - 2 * 23 = 50
             (HashMap::from([("x".to_string(), 11), ("y".to_string(), 13), ("z".to_string(), 29)]), 142), // 11 + 13 - (11 * (13 - 29)) - 2 * 29 = 142
             (HashMap::from([("x".to_string(), 3), ("y".to_string(), 7), ("z".to_string(), 13)]), 2), // 3 + 7 - (3 * (7 - 13)) - 2 * 13 = 2
-        ];
+        ].into_iter().map(|(inputs, output)| IOPair::from((inputs, output))
+        ).collect();
 
         let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts)/*.await*/;
         if exprs.is_empty(){
@@ -1420,7 +1489,8 @@ mod tests {
             (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 9), // 2 * 4 + 1 = 9
             (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 13), // 2 * 5 + 3 = 13
             (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 14), // 2 * 6 + 2 = 14
-        ];
+        ].into_iter().map(|(inputs, output)| IOPair::from((inputs, output))
+        ).collect();
 
         let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts);
         if exprs.is_empty(){
@@ -1446,7 +1516,8 @@ mod tests {
             (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), 8), // 4 * 1 + 4 = 8
             (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 20), // 5 * 3 + 5 = 20
             (HashMap::from([("x".to_string(), 6), ("y".to_string(), 2)]), 18), // 6 * 2 + 6 = 18
-        ];
+        ].into_iter().map(|(inputs, output)| IOPair::from((inputs, output))
+        ).collect();
 
         let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts)/*.await*/;
         if exprs.is_empty(){
@@ -1470,7 +1541,8 @@ mod tests {
             (HashMap::from([("x".to_string(), 3), ("y".to_string(), 4)]), 5), // 3 * 4 - 3 - 4 = 5
             (HashMap::from([("x".to_string(), 4), ("y".to_string(), 1)]), -1), // 4 * 1 - 4 - 1 = -1
             (HashMap::from([("x".to_string(), 5), ("y".to_string(), 3)]), 7), // 5 * 3 - 5 - 3 = 7
-        ];
+        ].into_iter().map(|(inputs, output)| IOPair::from((inputs, output))
+        ).collect();
 
         let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts)/*.await*/;
         if exprs.is_empty(){
@@ -1494,7 +1566,8 @@ mod tests {
             (HashMap::from([("x".to_string(), 32), ("y".to_string(), 9)]), 800), // 32 * (32 - 9) + 2 * 32 = 800
             (HashMap::from([("x".to_string(), 29), ("y".to_string(), 23)]), 232), // 4 * (4 - 1) + 2 * 4 = 10
             (HashMap::from([("x".to_string(), 2338), ("y".to_string(), 293)]), 4785886), // 2338 * (2338 - 293) + 2 * 2338 = 4785886
-        ];
+        ].into_iter().map(|(inputs, output)| IOPair::from((inputs, output))
+        ).collect();
 
         let exprs = solver.synthesize(EGG_ENUM_MAX_SIZE, &pts)/*.await*/;
         if exprs.is_empty(){
