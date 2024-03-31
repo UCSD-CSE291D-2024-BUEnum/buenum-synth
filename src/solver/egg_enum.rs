@@ -1,8 +1,9 @@
+use std::borrow::{Borrow, BorrowMut};
 use std::cmp::max;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 use async_std::task::{self, yield_now};
-
+use std::cell::RefCell;
 use cfg::earley::grammar;
 use egg::{rewrite as rw, *};
 use indexmap::IndexSet;
@@ -122,6 +123,56 @@ struct ObsEquiv {
     pts: Vec<IOPair>,
 }
 
+impl ObsEquiv {
+    // pub fn make_mut(egraph_cell: &RefCell<EGraph<ArithLanguage, Self>>, enode: &ArithLanguage) -> Vec<IOPair> {
+    //     let pts: &Vec<IOPair> = &egraph_cell.borrow().analysis.pts;
+    //     let sem = enode.semantics();
+    //     let egraph = egraph_cell.borrow();
+    //     let out = |i: &Id| &egraph[*i].data; // output
+    //     match enode {
+    //         // Constants
+    //         ArithLanguage::Num(n) => pts.iter().map(|iopair| IOPair::from((iopair.ins.clone(), n))).collect(),
+    //         // Varaibles
+    //         // ArithLanguage::Var(name) => pts.iter().map(|iopair | (input.clone(), sem(&[(input.clone(), *input.get(name).unwrap())]))).collect(),
+    //         ArithLanguage::Var(name) => pts.iter().map(|iopair| IOPair::from((iopair.ins.clone(), iopair.geti(name).unwrap()))).collect(),
+    //         // Unary operators
+    //         ArithLanguage::Neg([id]) => {
+    //             if out(id).len() != pts.len() {
+    //                 let eclass = &mut egraph_cell.borrow_mut()[*id];
+    //                 let new_data = ObsEquiv::make_mut(egraph_cell, &eclass.nodes[0]);
+    //                 eclass.data = new_data;
+    //             };
+    //             out(id)
+    //             .iter()
+    //             .map(|iopair| IOPair::from((iopair.ins.clone(), sem(&[IOPair::from((iopair.ins.clone(), iopair.out))]))))
+    //             .collect()
+    //         },
+    //         // Binary operators
+    //         ArithLanguage::Add([a, b]) | ArithLanguage::Sub([a, b]) | ArithLanguage::Mul([a, b]) => {
+    //             if out(a).len() != pts.len() {
+    //                 let eclass = &mut egraph_cell.borrow_mut()[*a];
+    //                 let new_data = ObsEquiv::make_mut(egraph_cell, &eclass.nodes[0]);
+    //                 eclass.data = new_data;
+    //             }; 
+    //             if out(b).len() != pts.len() {
+    //                 let eclass = &mut egraph_cell.borrow_mut()[*b];
+    //                 let new_data = ObsEquiv::make_mut(egraph_cell, &eclass.nodes[0]);
+    //                 eclass.data = new_data;
+    //             };
+    //             out(a)
+    //             .iter()
+    //             .zip(out(b))
+    //             .map(|(iopair_a, iopair_b)| {
+    //                 let input = iopair_a.ins.clone();
+    //                 let output = sem(&[IOPair::from((iopair_a.ins.clone(), iopair_a.out)), IOPair::from((iopair_b.ins.clone(), iopair_b.out))]);
+    //                 IOPair::from((input, output))
+    //             })
+    //             .collect()
+    //         },
+    //     }
+    // }
+}
+
 #[derive(Default, Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
 struct ExprAstSize {
     ast_size: usize,
@@ -217,7 +268,7 @@ impl Analysis<ArithLanguage> for ObsEquiv {
     fn make(egraph: &EGraph<ArithLanguage, Self>, enode: &ArithLanguage) -> Self::Data {
         let pts: &Vec<IOPair> = &egraph.analysis.pts;
         let sem = enode.semantics();
-        let o = |i: &Id| &egraph[*i].data; // output
+        let out = |i: &Id| &egraph[*i].data; // output
         match enode {
             // Constants
             ArithLanguage::Num(n) => pts.iter().map(|iopair| IOPair::from((iopair.ins.clone(), n))).collect(),
@@ -225,27 +276,30 @@ impl Analysis<ArithLanguage> for ObsEquiv {
             // ArithLanguage::Var(name) => pts.iter().map(|iopair | (input.clone(), sem(&[(input.clone(), *input.get(name).unwrap())]))).collect(),
             ArithLanguage::Var(name) => pts.iter().map(|iopair| IOPair::from((iopair.ins.clone(), iopair.geti(name).unwrap()))).collect(),
             // Unary operators
-            ArithLanguage::Neg([id]) => o(id)
+            ArithLanguage::Neg([id]) => {
+                if out(id).len() != pts.len() {
+                    panic!("The number of pts and the number of outputs of the child node are different.");
+                };
+                out(id)
                 .iter()
-                .zip(pts)
-                // .map(|((input, output), _)| (input.clone(), sem(&[(input.clone(), *output)])))
-                .map(|iopairs| IOPair::from((iopairs.0.ins.clone(), sem(&[IOPair::from((iopairs.0.ins.clone(), iopairs.0.out))]))))
-                .collect(),
+                .map(|iopair| IOPair::from((iopair.ins.clone(), sem(&[IOPair::from((iopair.ins.clone(), iopair.out))]))))
+                .collect()
+            },
             // Binary operators
-            ArithLanguage::Add([a, b]) | ArithLanguage::Sub([a, b]) | ArithLanguage::Mul([a, b]) => o(a)
+            ArithLanguage::Add([a, b]) | ArithLanguage::Sub([a, b]) | ArithLanguage::Mul([a, b]) => {
+                if out(a).len() != pts.len() || out(b).len() != pts.len() {
+                    panic!("The number of pts and the number of outputs of the child node are different.");
+                };
+                out(a)
                 .iter()
-                .zip(o(b))
-                .zip(pts)
-                // .map(|(((input_a, output_a), (input_b, output_b)), _)| {
-                //     let input = input_a.clone();
-                //     let output = sem(&[(input_a.clone(), *output_a), (input_b.clone(), *output_b)]);
-                //     (input, output)
-                .map(|((iopair_a, iopair_b), _)| {
+                .zip(out(b))
+                .map(|(iopair_a, iopair_b)| {
                     let input = iopair_a.ins.clone();
                     let output = sem(&[IOPair::from((iopair_a.ins.clone(), iopair_a.out)), IOPair::from((iopair_b.ins.clone(), iopair_b.out))]);
                     IOPair::from((input, output))
                 })
-                .collect(),
+                .collect()
+            },
         }
     }
     fn modify(egraph: &mut EGraph<ArithLanguage, Self>, id: Id) {
@@ -310,6 +364,7 @@ struct Enumerator<'a> {
     // cache: HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>,
     ecache: EGraph<ArithLanguage, ExprAstSize>,
     current_size: usize,
+    id_order: Vec<Id>,
 }
 
 impl<'a> Enumerator<'a> {
@@ -320,7 +375,89 @@ impl<'a> Enumerator<'a> {
             // cache: HashMap::new(),
             ecache: EGraph::new(ExprAstSize::default()).with_explanations_enabled(),
             current_size: 0,
+            id_order: vec![],
         }
+    }
+    // fn rebuild(&mut self, pts: &IOPairs) {
+    //     let mut inconsistent_eclasses = HashSet::new();
+    //     // Identify inconsistent eclasses
+    //     for (key, exprs) in &self.cache {
+    //         for expr in exprs {
+    //             let id = self.egraph.add_expr(expr);
+    //             let eclass = &self.egraph[id];
+
+    //             let mut output = HashSet::new();
+    //             for (inputs, _) in pts {
+    //                 for node in &eclass.nodes {
+    //                     if let Some((i, o)) = ObsEquiv::make(&self.egraph, node).iter().find(|(i, _)| i == inputs) {
+    //                         output.insert(*o);
+    //                     }
+    //                     if output.len() > 1 {
+    //                         break;
+    //                     }
+    //                 }
+    //                 if output.len() > 1 {
+    //                     inconsistent_eclasses.insert(id);
+    //                     break;
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     let new_egraph = EGraph::new(ObsEquiv { pts: pts.clone() }).with_explanations_enabled();
+    //     let mut old_egraph = std::mem::replace(&mut self.egraph, new_egraph);
+
+    //     // Add consistent eclasses to the new egraph
+    //     for (key, exprs) in &self.cache {
+    //         for expr in exprs {
+    //             let id = old_egraph.add_expr(expr);
+    //             if !inconsistent_eclasses.contains(&id) {
+    //                 self.egraph.add_expr(expr);
+    //             }
+    //         }
+    //     }
+    //     // Add inconsistent eclasses to the new egraph
+    //     for id in inconsistent_eclasses {
+    //         for node in &old_egraph[id].nodes {
+    //             let new_id = self.egraph.add(node.clone());
+    //         }
+    //     }
+    //     // Merge equivalent expressions in the new egraph
+    //     self.merge_equivs();
+    //     self.egraph.rebuild();
+    // }
+    fn rebuild_new(&mut self, pts: &Vec<IOPair>) {
+        println!("<Enumerator::rebuild_new> pretty_egraph: {}", pretty_egraph(&self.egraph, 2));
+        println!("<Enumerator::rebuild_new> self.egraph.analysis.pts.len(): {}", self.egraph.analysis.pts.len());
+        // Update the stored pts
+        self.egraph.analysis.pts = pts.clone();
+        let egraph_clone = self.egraph.clone();
+        
+        let mut clusters = HashMap::new();
+        let compute_data = |lc: &ArithLanguage| {
+            ObsEquiv::make(&egraph_clone, lc)
+        };
+        let mut visited = HashSet::new();
+        println!("<Enumerator::rebuild_new> id_order.len(): {}", self.id_order.len());
+        for id in self.id_order.iter() {
+            let id = self.egraph.find(*id);
+            if visited.contains(&id) {
+                println!("<Enumerator::rebuild_new> id: {} is visited", id);
+                continue;
+            } else {
+                println!("<Enumerator::rebuild_new> id: {} is not visited", id);
+            }
+            visited.insert(id);
+            // TODO: split eclass, then according to the parent list of the eclass, find the enode, duplicate the enode and set child point to the new eclass
+            self.egraph.split_eclass(id, compute_data);
+            let clust = self.egraph.cluster_enodes_by_data(id, compute_data);
+            for (k, v) in &clust {
+                println!("<Enumerator::rebuild_new> <{}> iopair: {}, indexes: {:?}", id, pretty_data(k, 0), v);
+            }
+            clusters.insert(id, clust);
+        }
+        // self.rebuild(pts);
+        println!("<Enumerator::rebuild_new> pretty_egraph: {}", pretty_egraph(&self.egraph, 2));
     }
 
     fn rebuild(&mut self, pts: &Vec<IOPair>) {
@@ -345,9 +482,9 @@ impl<'a> Enumerator<'a> {
         // for expr in exprs_set {
         //     new_egraph.add_expr(&expr);
         // }
-        self.merge_equivs();
         new_egraph.rebuild();
         self.egraph = new_egraph;
+        self.merge_equivs();
         println!("<Enumerator::rebuild> Time elapsed: {:?}", start.elapsed().as_secs_f64());
     }
 
@@ -463,6 +600,7 @@ impl<'a> Enumerator<'a> {
 
                                 // let (id, expr) = self.egraph.add_with_recexpr_return(lang_construct.clone());
                                 let id = self.egraph.add(lang_construct.clone());
+                                self.id_order.push(id);
                                 let expr = self.egraph.id_to_expr(id);
 
                                 let id = self.ecache.add_expr(&expr);
@@ -550,6 +688,7 @@ impl<'a> Enumerator<'a> {
                                                 },
                                                 _ => unreachable!(),
                                             };
+                                            self.id_order.push(id);
 
                                             let mut old_expr_iter = [left_expr.clone(), right_expr.clone()].into_iter();
                                             let expr = lang_construct.join_recexprs(|id| old_expr_iter.next().unwrap());
@@ -565,7 +704,8 @@ impl<'a> Enumerator<'a> {
                                     }
                                 }
                             },
-                            ArithLanguage::Neg(_) => {
+                            ArithLanguage::Neg(_) 
+                            => {
                                 let right_size = size - 1;
                                 // println!("<Enumerator::grow> right_size: {}", right_size);
 
@@ -585,6 +725,7 @@ impl<'a> Enumerator<'a> {
                                     let right_id = self.egraph.add_expr(right_expr);
                                     // let (id, expr) = self.egraph.add_with_recexpr_return(ArithLanguage::Neg([right_id]));
                                     let id = self.egraph.add(ArithLanguage::Neg([right_id]));
+                                    self.id_order.push(id);
                                     // let expr = self.egraph.id_to_expr(id);
                                     let expr = lang_construct.join_recexprs(|_| right_expr.clone());
                                     // println!("<Enumerator::grow> lc: {:?}, expr: {:?}", lang_construct, expr.pretty(100));
@@ -638,7 +779,7 @@ impl<'a> Enumerator<'a> {
     /* async */fn enumerate(&mut self, size: usize, pts: &Vec<IOPair>) -> Vec<RecExpr<ArithLanguage>> {
         if self.egraph.analysis.pts.len() != pts.len() {
             // println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}", self.egraph.analysis.pts);
-            self.rebuild(pts);
+            self.rebuild_new(pts);
             // println!("<Enumerator::enumerate> egraph.analysis.pts: {:?}", self.egraph.analysis.pts);
         }
         println!("<Enumerator::enumerate> current size: {}, pts: {:?}", self.current_size, pts);
@@ -839,6 +980,13 @@ fn pretty_cache(cache: &HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage
     result.trim().to_string()
 }
 
+fn pretty_data(data: &Vec<IOPair>, starting_space: usize) -> String {
+    let mut result = String::new();
+    for iopair in data {
+        result.push_str(&format!("{}[{}] -> {}\n", " ".repeat(starting_space), iopair.ins.iter().sorted().map(|(k, v)| format!("{}: {}", k, v)).collect::<Vec<_>>().join(", "), iopair.out));
+    }
+    result.trim().to_string()
+}
 fn pretty_egraph(egraph: &EGraph<ArithLanguage, ObsEquiv>, starting_space: usize) -> String {
     let mut result = String::new();
     result.push_str("EGraph:\n");
