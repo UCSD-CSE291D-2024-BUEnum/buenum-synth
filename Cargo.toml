@@ -11,7 +11,8 @@ anyhow = "1.0.79"
 cfg = "0.8.0"
 clap = "4.5.1"        # CLI Arguments: clap
 # egg = { git = "https://github.com/efJerryYang/egg-increm.git", tag = "v0.9.5" }
-egg = { git = "https://github.com/efJerryYang/egg-increm.git", branch = "dev" } # commit_hash = 9fb8d27
+# egg = { git = "https://github.com/efJerryYang/egg-increm.git", branch = "dev" } # commit_hash = 9fb8d27
+egg = { path = "../egg-increm/" }
 env = "0.0.0"
 log4rs = "1.3.0"      # Log4j-like logging
 pest = "2.7.7"        # Parser Generator

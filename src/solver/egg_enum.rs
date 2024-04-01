@@ -1,6 +1,7 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::cmp::max;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Debug;
 use std::hash::Hash;
 use async_std::task::{self, yield_now};
 use std::cell::RefCell;
@@ -40,6 +41,7 @@ impl ArithLanguage {
             ArithLanguage::Mul([_, _]) => Box::new(move |args| args[0].out * args[1].out),
         }
     }
+    // TODO: replace with L.update_children
     pub fn assign_ids(&self, ids: &[Id]) -> Self {
         match self {
             ArithLanguage::Num(n) => ArithLanguage::Num(*n),
@@ -54,7 +56,7 @@ impl ArithLanguage {
 type ProdName = String;
 type IOPairs = Vec<IOPair>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct IOPair {
     ins: Vec<(String, i32)>,
     out: i32,
@@ -98,8 +100,6 @@ impl From<(HashMap<String, i32>, i32)> for IOPair {
     }
 }
 
-type IOPairsRef<'a> = Vec<(&'a Vec<(String, i32)> , i32)>;
-
 #[derive(Debug, Clone)]
 struct Production {
     lhs: ProdName,
@@ -118,9 +118,18 @@ struct Grammar {
     productions: Vec<Production>,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Clone)]
 struct ObsEquiv {
     pts: Vec<IOPair>,
+}
+
+impl Debug for IOPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn pretty_iopair(iopair: &IOPair) -> String {
+            format!("[{}] -> {}", iopair.ins.iter().sorted().map(|(k, v)| format!("{}: {}", k, v)).collect::<Vec<_>>().join(", "), iopair.out)
+        }
+        write!(f, "{}", pretty_iopair(self))
+    }
 }
 
 impl ObsEquiv {
@@ -433,7 +442,7 @@ impl<'a> Enumerator<'a> {
         self.egraph.analysis.pts = pts.clone();
         let egraph_clone = self.egraph.clone();
         
-        let mut clusters = HashMap::new();
+        // let mut clusters = HashMap::new();
         let compute_data = |lc: &ArithLanguage| {
             ObsEquiv::make(&egraph_clone, lc)
         };
@@ -450,11 +459,11 @@ impl<'a> Enumerator<'a> {
             visited.insert(id);
             // TODO: split eclass, then according to the parent list of the eclass, find the enode, duplicate the enode and set child point to the new eclass
             self.egraph.split_eclass(id, compute_data);
-            let clust = self.egraph.cluster_enodes_by_data(id, compute_data);
-            for (k, v) in &clust {
-                println!("<Enumerator::rebuild_new> <{}> iopair: {}, indexes: {:?}", id, pretty_data(k, 0), v);
-            }
-            clusters.insert(id, clust);
+            // let clust = self.egraph.cluster_enodes_by_data(id, compute_data);
+            // for (k, v) in &clust {
+            //     println!("<Enumerator::rebuild_new> <{}> iopair: {:?}, indexes: {:?}", id, k, v);
+            // }
+            // clusters.insert(id, clust);
         }
         // self.rebuild(pts);
         println!("<Enumerator::rebuild_new> pretty_egraph: {}", pretty_egraph(&self.egraph, 2));
