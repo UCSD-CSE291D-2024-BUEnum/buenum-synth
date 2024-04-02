@@ -274,6 +274,7 @@ impl Analysis<ArithLanguage> for ObsEquiv {
         DidMerge(merged, false)
     }
 
+    // TODO: Use the latest main branch to allow mutable egraph here
     fn make(egraph: &EGraph<ArithLanguage, Self>, enode: &ArithLanguage) -> Self::Data {
         let pts: &Vec<IOPair> = &egraph.analysis.pts;
         let sem = enode.semantics();
@@ -373,6 +374,7 @@ struct Enumerator<'a> {
     // cache: HashMap<(ProdName, usize), HashSet<RecExpr<ArithLanguage>>>,
     ecache: EGraph<ArithLanguage, ExprAstSize>,
     current_size: usize,
+    // TODO: will not be needed if we use the main branch
     id_order: Vec<Id>,
 }
 
