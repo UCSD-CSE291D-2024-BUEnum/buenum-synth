@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
-
+#![allow(arithmetic_overflow)]
 use crate::solver::baseline_solver::BaselineSolver;
 use std::fs;
 use std::time::Instant;
