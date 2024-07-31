@@ -275,7 +275,7 @@ impl Analysis<ArithLanguage> for ObsEquiv {
     }
 
     // TODO: Use the latest main branch to allow mutable egraph here
-    fn make(egraph: &EGraph<ArithLanguage, Self>, enode: &ArithLanguage) -> Self::Data {
+    fn make(egraph: &mut EGraph<ArithLanguage, Self>, enode: &ArithLanguage) -> Self::Data {
         let pts: &Vec<IOPair> = &egraph.analysis.pts;
         let sem = enode.semantics();
         let out = |i: &Id| &egraph[*i].data; // output
@@ -343,7 +343,7 @@ impl Analysis<ArithLanguage> for ExprAstSize {
         DidMerge(merged, false)
     }
 
-    fn make(egraph: &EGraph<ArithLanguage, Self>, enode: &ArithLanguage) -> Self::Data {
+    fn make(egraph: &mut EGraph<ArithLanguage, Self>, enode: &ArithLanguage) -> Self::Data {
         // println!("<ExprAstSize::make> enode: {:?}", enode);
         if let Some(id) = egraph.lookup(enode.clone()) {
             let ExprAstSize { ast_size, prod_name} = egraph[id].data.clone();
@@ -442,11 +442,10 @@ impl<'a> Enumerator<'a> {
         println!("<Enumerator::rebuild_new> self.egraph.analysis.pts.len(): {}", self.egraph.analysis.pts.len());
         // Update the stored pts
         self.egraph.analysis.pts = pts.clone();
-        let egraph_clone = self.egraph.clone();
         
         // let mut clusters = HashMap::new();
         let compute_data = |lc: &ArithLanguage| {
-            ObsEquiv::make(&egraph_clone, lc)
+            ObsEquiv::make(&mut self.egraph, lc)
         };
         let mut visited = HashSet::new();
         println!("<Enumerator::rebuild_new> id_order.len(): {}", self.id_order.len());
